@@ -72,56 +72,92 @@ object Stats {
         return due
     }
 
-    // ------------------------------------------------------------ dépenses
+    // ------------------------------------------------------- dépenses et revenus
 
     fun monthOf(date: LocalDate): YearMonth = YearMonth.of(date.year, date.monthValue)
 
     fun expensesOfMonth(expenses: List<Expense>, month: YearMonth): List<Expense> =
         expenses.filter { monthOf(it.date) == month }
 
+    fun incomesOfMonth(incomes: List<Income>, month: YearMonth): List<Income> =
+        incomes.filter { monthOf(it.date) == month }
+
     fun total(expenses: List<Expense>): Long {
         var sum = 0L
-        for (e in expenses) sum += e.amountCents
+        for (e in expenses) sum += e.amountMillimes
+        return sum
+    }
+
+    fun totalIncome(incomes: List<Income>): Long {
+        var sum = 0L
+        for (i in incomes) sum += i.amountMillimes
         return sum
     }
 
     fun totalsByCategory(expenses: List<Expense>): Map<String, Long> {
         val totals = LinkedHashMap<String, Long>()
         for (e in expenses) {
-            totals[e.categoryCode] = (totals[e.categoryCode] ?: 0L) + e.amountCents
+            totals[e.categoryCode] = (totals[e.categoryCode] ?: 0L) + e.amountMillimes
         }
         return totals
     }
 
+    fun totalsBySource(incomes: List<Income>): Map<String, Long> {
+        val totals = LinkedHashMap<String, Long>()
+        for (i in incomes) {
+            totals[i.sourceCode] = (totals[i.sourceCode] ?: 0L) + i.amountMillimes
+        }
+        return totals
+    }
+
+    /** Solde du mois : revenus encaissés moins dépenses engagées. */
+    fun balanceOfMonth(data: BudgetData, month: YearMonth): Long =
+        totalIncome(incomesOfMonth(data.incomes, month)) - total(expensesOfMonth(data.expenses, month))
+
+    data class MonthTotal(
+        val month: YearMonth,
+        val expenseMillimes: Long,
+        val incomeMillimes: Long
+    ) {
+        val netMillimes: Long get() = incomeMillimes - expenseMillimes
+    }
+
     /** Totaux mensuels sur les [count] derniers mois, du plus ancien au plus récent. */
-    fun monthlyHistory(expenses: List<Expense>, endMonth: YearMonth, count: Int): List<MonthTotal> {
+    fun monthlyHistory(data: BudgetData, endMonth: YearMonth, count: Int): List<MonthTotal> {
         val result = ArrayList<MonthTotal>()
         for (i in count - 1 downTo 0) {
             val month = endMonth.minusMonths(i.toLong())
-            result.add(MonthTotal(month, total(expensesOfMonth(expenses, month))))
+            result.add(
+                MonthTotal(
+                    month = month,
+                    expenseMillimes = total(expensesOfMonth(data.expenses, month)),
+                    incomeMillimes = totalIncome(incomesOfMonth(data.incomes, month))
+                )
+            )
         }
         return result
     }
-
-    data class MonthTotal(val month: YearMonth, val totalCents: Long)
 
     // ------------------------------------------------------------ prévisions
 
     data class MonthForecast(
         val month: YearMonth,
-        val recurringCents: Long,
-        val eventsCents: Long,
-        val perCategoryCents: Map<String, Long>
+        val recurringExpenseMillimes: Long,
+        val eventsMillimes: Long,
+        val expectedIncomeMillimes: Long,
+        val perCategoryMillimes: Map<String, Long>
     ) {
-        val totalCents: Long get() = recurringCents + eventsCents
+        val totalExpenseMillimes: Long get() = recurringExpenseMillimes + eventsMillimes
+        val netMillimes: Long get() = expectedIncomeMillimes - totalExpenseMillimes
     }
 
     /**
-     * Projette les dépenses sur [horizonMonths] mois à partir du mois suivant [from].
+     * Projette le budget sur [horizonMonths] mois à partir du mois suivant [from].
      *
-     * Méthode : moyenne par catégorie sur les [lookbackMonths] derniers mois
-     * **complets** (le mois en cours, partiel, est exclu pour ne pas sous-estimer),
-     * à laquelle s'ajoutent les échéances d'événements porteurs d'un montant.
+     * Méthode : moyennes par catégorie (dépenses) et globale (revenus) sur les
+     * [lookbackMonths] derniers mois **complets** — le mois en cours, partiel,
+     * est exclu pour ne pas fausser la tendance — auxquelles s'ajoutent les
+     * échéances d'événements porteurs d'un montant.
      */
     fun forecast(
         data: BudgetData,
@@ -132,27 +168,40 @@ object Stats {
         val currentMonth = monthOf(from)
         val lastCompleteMonth = currentMonth.minusMonths(1)
 
-        // Moyenne par catégorie sur les mois complets précédents.
+        // Moyenne des dépenses par catégorie sur les mois complets précédents.
         val sums = LinkedHashMap<String, Long>()
-        var monthsWithData = 0
+        var monthsWithExpenses = 0
+        var incomeSum = 0L
+        var monthsWithIncome = 0
+
         for (i in 0 until lookbackMonths) {
             val month = lastCompleteMonth.minusMonths(i.toLong())
+
             val monthExpenses = expensesOfMonth(data.expenses, month)
-            if (monthExpenses.isEmpty()) continue
-            monthsWithData++
-            for ((code, amount) in totalsByCategory(monthExpenses)) {
-                sums[code] = (sums[code] ?: 0L) + amount
+            if (monthExpenses.isNotEmpty()) {
+                monthsWithExpenses++
+                for ((code, amount) in totalsByCategory(monthExpenses)) {
+                    sums[code] = (sums[code] ?: 0L) + amount
+                }
+            }
+
+            val monthIncomes = incomesOfMonth(data.incomes, month)
+            if (monthIncomes.isNotEmpty()) {
+                monthsWithIncome++
+                incomeSum += totalIncome(monthIncomes)
             }
         }
 
         val averages = LinkedHashMap<String, Long>()
-        if (monthsWithData > 0) {
+        if (monthsWithExpenses > 0) {
             for ((code, sum) in sums) {
-                averages[code] = sum / monthsWithData
+                averages[code] = sum / monthsWithExpenses
             }
         }
         var recurringBase = 0L
         for (value in averages.values) recurringBase += value
+
+        val expectedIncome = if (monthsWithIncome > 0) incomeSum / monthsWithIncome else 0L
 
         val forecasts = ArrayList<MonthForecast>()
         for (i in 1..horizonMonths) {
@@ -160,24 +209,24 @@ object Stats {
             val monthStart = month.atDay(1)
             val monthEnd = month.atEndOfMonth()
 
-            var eventsCents = 0L
-            val perCategory = LinkedHashMap<String, Long>()
-            perCategory.putAll(averages)
-
+            var eventsMillimes = 0L
             for (event in data.events) {
-                val amount = event.amountCents ?: continue
+                val amount = event.amountMillimes ?: continue
                 val occurrences = occurrencesBetween(event, monthStart, monthEnd)
                 if (occurrences.isEmpty()) continue
-                val contribution = amount * occurrences.size
-                eventsCents += contribution
+                eventsMillimes += amount * occurrences.size
             }
+
+            val perCategory = LinkedHashMap<String, Long>()
+            perCategory.putAll(averages)
 
             forecasts.add(
                 MonthForecast(
                     month = month,
-                    recurringCents = recurringBase,
-                    eventsCents = eventsCents,
-                    perCategoryCents = perCategory
+                    recurringExpenseMillimes = recurringBase,
+                    eventsMillimes = eventsMillimes,
+                    expectedIncomeMillimes = expectedIncome,
+                    perCategoryMillimes = perCategory
                 )
             )
         }

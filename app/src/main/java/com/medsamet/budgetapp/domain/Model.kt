@@ -5,7 +5,8 @@ import java.time.LocalDate
 /**
  * Modèles de données de l'application.
  *
- * Tous les montants sont stockés en **centimes** (Long) afin d'éviter
+ * Tous les montants sont stockés en **millimes** (Long) : le dinar tunisien
+ * se divise en 1 000 millimes, et l'usage d'entiers écarte définitivement
  * les erreurs d'arrondi des nombres à virgule flottante.
  */
 
@@ -14,14 +15,32 @@ data class Category(
     val code: String,
     val name: String,
     val colorHex: String = "#7A7A7A",
-    val monthlyBudgetCents: Long? = null
+    val monthlyBudgetMillimes: Long? = null
 )
 
 data class Expense(
     val id: Long = 0L,
     val date: LocalDate,
-    val amountCents: Long,
+    val amountMillimes: Long,
     val categoryCode: String,
+    val label: String = "",
+    val method: String = "",
+    val notes: String = ""
+)
+
+/** Origine d'un revenu : salaire, prime, vente, emprunt… */
+data class IncomeSource(
+    val id: Long = 0L,
+    val code: String,
+    val name: String,
+    val colorHex: String = "#4C956C"
+)
+
+data class Income(
+    val id: Long = 0L,
+    val date: LocalDate,
+    val amountMillimes: Long,
+    val sourceCode: String,
     val label: String = "",
     val method: String = "",
     val notes: String = ""
@@ -67,7 +86,7 @@ enum class Recurrence(val code: String, val label: String) {
  * Un événement daté : anniversaire, maintenance d'équipement,
  * renouvellement de licence, etc.
  *
- * [amountCents] est optionnel : lorsqu'il est renseigné, l'événement
+ * [amountMillimes] est optionnel : lorsqu'il est renseigné, l'événement
  * est intégré aux prévisions budgétaires.
  */
 data class EventItem(
@@ -77,7 +96,7 @@ data class EventItem(
     val kind: EventKind = EventKind.AUTRE,
     val recurrence: Recurrence = Recurrence.AUCUNE,
     val reminderDays: Int = 7,
-    val amountCents: Long? = null,
+    val amountMillimes: Long? = null,
     val notes: String = "",
     val lastCompleted: LocalDate? = null
 )
@@ -85,31 +104,43 @@ data class EventItem(
 /** Instantané complet des données de l'application. */
 data class BudgetData(
     val categories: List<Category> = emptyList(),
+    val sources: List<IncomeSource> = emptyList(),
     val expenses: List<Expense> = emptyList(),
+    val incomes: List<Income> = emptyList(),
     val events: List<EventItem> = emptyList()
 )
 
 object Money {
 
-    /** 4250 -> "42.50" (séparateur point, sans symbole). */
-    fun format(cents: Long): String {
-        val sign = if (cents < 0) "-" else ""
-        val abs = if (cents < 0) -cents else cents
-        val units = abs / 100
-        val frac = (abs % 100).toString().padStart(2, '0')
+    /** Symbole affiché à l'écran. */
+    const val SYMBOL = "DT"
+
+    /** Nombre de millimes dans un dinar. */
+    const val SCALE = 1000L
+
+    /** 42500 -> "42.500" (séparateur point, sans symbole : forme utilisée à l'export). */
+    fun format(millimes: Long): String {
+        val sign = if (millimes < 0) "-" else ""
+        val abs = if (millimes < 0) -millimes else millimes
+        val units = abs / SCALE
+        val frac = (abs % SCALE).toString().padStart(3, '0')
         return "$sign$units.$frac"
     }
 
-    /** 4250 -> "42,50 €" (affichage à l'écran). */
-    fun display(cents: Long): String = format(cents).replace('.', ',') + " €"
+    /** 42500 -> "42,500 DT" (affichage à l'écran). */
+    fun display(millimes: Long): String = format(millimes).replace('.', ',') + " " + SYMBOL
+
+    /** Solde : préfixe explicite du signe pour lever toute ambiguïté. */
+    fun displaySigned(millimes: Long): String =
+        if (millimes > 0L) "+" + display(millimes) else display(millimes)
 
     /**
      * Analyse un montant saisi ou importé.
-     * Accepte "42.50", "42,50", "42", "1 234,56", "-12.30", "12,50 €".
-     * Renvoie null si la valeur est vide ou invalide.
-     * Au-delà de deux décimales, les chiffres supplémentaires sont tronqués.
+     * Accepte "42.500", "42,5", "42", "1 234,750", "-12.300", "12,500 DT".
+     * Renvoie null si la valeur est vide ou ne contient aucun chiffre.
+     * Au-delà de trois décimales, les chiffres supplémentaires sont tronqués.
      */
-    fun parseToCents(raw: String): Long? {
+    fun parse(raw: String): Long? {
         // On ne conserve que ce qui a un sens numerique : tout le reste
         // (espaces ordinaires ou insecables, symboles monetaires, lettres)
         // est ignore. Evite toute sequence d'echappement dans le code.
@@ -126,12 +157,8 @@ object Money {
         if (cleaned.isEmpty()) return null
 
         val negative = cleaned.startsWith("-")
-        cleaned = cleaned.removePrefix("-").removePrefix("+")
+        cleaned = cleaned.removePrefix("-")
         if (cleaned.isEmpty()) return null
-
-        for (c in cleaned) {
-            if (!c.isDigit() && c != '.') return null
-        }
 
         val parts = cleaned.split(".")
         if (parts.size > 2) return null
@@ -139,10 +166,10 @@ object Money {
         val wholeText = if (parts[0].isEmpty()) "0" else parts[0]
         val whole = wholeText.toLongOrNull() ?: return null
 
-        val fracText = if (parts.size == 2) parts[1].padEnd(2, '0').substring(0, 2) else "00"
+        val fracText = if (parts.size == 2) parts[1].padEnd(3, '0').substring(0, 3) else "000"
         val frac = fracText.toLongOrNull() ?: return null
 
-        val total = whole * 100L + frac
+        val total = whole * SCALE + frac
         return if (negative) -total else total
     }
 }
