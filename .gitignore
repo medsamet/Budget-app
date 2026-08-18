@@ -12,3 +12,6 @@ app/build/
 build/
 *.apk
 *.aab
+
+# Cle de debogage reconstruite au moment de la compilation depuis ci/debug-keystore.base64
+ci/debug.keystore

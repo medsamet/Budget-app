@@ -4,6 +4,25 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// Cle de signature de debogage stable.
+//
+// Sans elle, chaque execution de GitHub Actions genere une cle differente et
+// la nouvelle version refuse de s'installer par-dessus la precedente
+// (« application non installee »), obligeant a desinstaller et donc a perdre
+// les donnees. La cle est stockee en base64 pour rester un fichier texte,
+// seul format que l'on puisse publier via l'API GitHub.
+//
+// Il s'agit d'une cle de debogage, au mot de passe conventionnel « android » :
+// elle n'a aucune valeur de securite et ne convient pas a une publication sur
+// le Play Store, qui exigera une cle privee tenue secrete.
+val debugKeystoreEncoded = rootProject.file("ci/debug-keystore.base64")
+val debugKeystore = rootProject.file("ci/debug.keystore")
+if (debugKeystoreEncoded.exists() && !debugKeystore.exists()) {
+    debugKeystore.writeBytes(
+        java.util.Base64.getMimeDecoder().decode(debugKeystoreEncoded.readText())
+    )
+}
+
 android {
     namespace = "com.medsamet.budgetapp"
     compileSdk = 35
@@ -12,9 +31,20 @@ android {
         applicationId = "com.medsamet.budgetapp"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.2.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        getByName("debug") {
+            if (debugKeystore.exists()) {
+                storeFile = debugKeystore
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
     }
 
     buildTypes {
