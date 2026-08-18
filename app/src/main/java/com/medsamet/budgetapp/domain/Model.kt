@@ -112,8 +112,8 @@ object Money {
     fun parseToCents(raw: String): Long? {
         var cleaned = raw.trim()
             .replace(" ", "")
-            .replace(" ", "")
-            .replace(" ", "")
+            .replace("\\u00A0", "")
+            .replace("\\u202F", "")
             .replace("€", "")
             .replace("EUR", "", ignoreCase = true)
             .replace(",", ".")
