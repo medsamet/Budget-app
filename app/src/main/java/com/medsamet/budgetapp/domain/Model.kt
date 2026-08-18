@@ -110,13 +110,19 @@ object Money {
      * Au-delà de deux décimales, les chiffres supplémentaires sont tronqués.
      */
     fun parseToCents(raw: String): Long? {
-        var cleaned = raw.trim()
-            .replace(" ", "")
-            .replace("\\u00A0", "")
-            .replace("\\u202F", "")
-            .replace("€", "")
-            .replace("EUR", "", ignoreCase = true)
-            .replace(",", ".")
+        // On ne conserve que ce qui a un sens numerique : tout le reste
+        // (espaces ordinaires ou insecables, symboles monetaires, lettres)
+        // est ignore. Evite toute sequence d'echappement dans le code.
+        val builder = StringBuilder()
+        for (c in raw.trim()) {
+            when {
+                c.isDigit() -> builder.append(c)
+                c == '.' || c == ',' -> builder.append('.')
+                c == '-' && builder.isEmpty() -> builder.append('-')
+                else -> Unit
+            }
+        }
+        var cleaned = builder.toString()
         if (cleaned.isEmpty()) return null
 
         val negative = cleaned.startsWith("-")
