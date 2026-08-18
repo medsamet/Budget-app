@@ -1,3 +1,8 @@
+// Dans un script Gradle Kotlin DSL, « java » designe l'extension du plugin Java
+// du projet et masque le paquet java.* : ecrire java.util.Base64 echoue avec
+// « Unresolved reference: util ». On importe donc le type explicitement.
+import java.util.Base64
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -19,7 +24,7 @@ val debugKeystoreEncoded = rootProject.file("ci/debug-keystore.base64")
 val debugKeystore = rootProject.file("ci/debug.keystore")
 if (debugKeystoreEncoded.exists() && !debugKeystore.exists()) {
     debugKeystore.writeBytes(
-        java.util.Base64.getMimeDecoder().decode(debugKeystoreEncoded.readText())
+        Base64.getMimeDecoder().decode(debugKeystoreEncoded.readText())
     )
 }
 
@@ -31,8 +36,8 @@ android {
         applicationId = "com.medsamet.budgetapp"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.2.1"
+        versionCode = 4
+        versionName = "0.2.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
