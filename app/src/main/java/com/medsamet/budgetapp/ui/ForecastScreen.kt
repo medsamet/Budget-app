@@ -26,7 +26,7 @@ fun ForecastScreen(viewModel: BudgetViewModel) {
     val data = viewModel.data
     val today = LocalDate.now()
     val forecasts = Stats.forecast(data, today, horizonMonths = 6, lookbackMonths = 3)
-    val maxTotal = forecasts.maxOfOrNull { it.totalCents } ?: 0L
+    val maxTotal = forecasts.maxOfOrNull { it.totalExpenseMillimes } ?: 0L
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -41,18 +41,18 @@ fun ForecastScreen(viewModel: BudgetViewModel) {
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "Projection sur 6 mois : moyenne par catégorie des 3 derniers mois " +
-                    "complets, à laquelle s'ajoutent les échéances datées de l'agenda.",
+                text = "Projection sur 6 mois : moyennes des 3 derniers mois complets " +
+                    "pour les revenus et les dépenses, augmentées des échéances datées de l'agenda.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
 
-        if (data.expenses.isEmpty()) {
+        if (data.expenses.isEmpty() && data.incomes.isEmpty()) {
             item {
                 SectionCard(title = "Pas encore de données") {
                     Text(
-                        "Saisis quelques dépenses : la prévision devient fiable " +
+                        "Saisis quelques mouvements : la prévision devient fiable " +
                             "à partir d'un mois complet d'historique."
                     )
                 }
@@ -68,10 +68,19 @@ fun ForecastScreen(viewModel: BudgetViewModel) {
                         verticalAlignment = Alignment.Bottom
                     ) {
                         Text(
-                            text = Money.display(forecast.totalCents),
+                            text = Money.displaySigned(forecast.netMillimes),
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                            color = if (forecast.netMillimes < 0L) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            }
+                        )
+                        Text(
+                            text = "solde prévu",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     Spacer(Modifier.height(8.dp))
@@ -79,18 +88,20 @@ fun ForecastScreen(viewModel: BudgetViewModel) {
                         fraction = if (maxTotal == 0L) {
                             0f
                         } else {
-                            forecast.totalCents.toFloat() / maxTotal.toFloat()
+                            forecast.totalExpenseMillimes.toFloat() / maxTotal.toFloat()
                         },
                         color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(Modifier.height(10.dp))
-                    LabeledRow("Dépenses courantes estimées", Money.display(forecast.recurringCents))
-                    LabeledRow("Échéances de l'agenda", Money.display(forecast.eventsCents))
+                    LabeledRow("Revenus attendus", Money.display(forecast.expectedIncomeMillimes))
+                    LabeledRow("Dépenses courantes estimées", Money.display(forecast.recurringExpenseMillimes))
+                    LabeledRow("Échéances de l'agenda", Money.display(forecast.eventsMillimes))
+                    LabeledRow("Total des sorties", Money.display(forecast.totalExpenseMillimes))
 
                     val monthStart = forecast.month.atDay(1)
                     val monthEnd = forecast.month.atEndOfMonth()
                     val dueThisMonth = data.events.filter { event ->
-                        event.amountCents != null &&
+                        event.amountMillimes != null &&
                             Stats.occurrencesBetween(event, monthStart, monthEnd).isNotEmpty()
                     }
                     if (dueThisMonth.isNotEmpty()) {
@@ -101,7 +112,7 @@ fun ForecastScreen(viewModel: BudgetViewModel) {
                         )
                         for (event in dueThisMonth) {
                             val occurrences = Stats.occurrencesBetween(event, monthStart, monthEnd)
-                            val amount = event.amountCents ?: 0L
+                            val amount = event.amountMillimes ?: 0L
                             for (date in occurrences) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
@@ -126,17 +137,27 @@ fun ForecastScreen(viewModel: BudgetViewModel) {
         }
 
         item {
-            val totalHorizon = forecasts.sumOf { it.totalCents }
-            SectionCard(title = "Total projeté sur 6 mois") {
+            val netHorizon = forecasts.sumOf { it.netMillimes }
+            val expenseHorizon = forecasts.sumOf { it.totalExpenseMillimes }
+            val incomeHorizon = forecasts.sumOf { it.expectedIncomeMillimes }
+            SectionCard(title = "Cumul sur 6 mois") {
                 Text(
-                    text = Money.display(totalHorizon),
+                    text = Money.displaySigned(netHorizon),
                     style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = if (netHorizon < 0L) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    }
                 )
+                Spacer(Modifier.height(8.dp))
+                LabeledRow("Revenus cumulés", Money.display(incomeHorizon))
+                LabeledRow("Dépenses cumulées", Money.display(expenseHorizon))
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = "Soit environ " +
-                        Money.display(if (forecasts.isEmpty()) 0L else totalHorizon / forecasts.size) +
+                        Money.displaySigned(if (forecasts.isEmpty()) 0L else netHorizon / forecasts.size) +
                         " par mois.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
