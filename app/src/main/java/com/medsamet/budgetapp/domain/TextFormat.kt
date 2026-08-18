@@ -4,7 +4,7 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 /**
- * Format d'échange texte de l'application (« BudgetApp export v1 »).
+ * Format d'échange texte de l'application (« BudgetApp export v2 »).
  *
  * Objectifs :
  *  - lisible et modifiable dans n'importe quel éditeur de texte ;
@@ -18,22 +18,36 @@ import java.time.format.DateTimeFormatter
  *     [CATEGORIES]
  *     code | nom | couleur | budget_mensuel
  *
+ *     [SOURCES]
+ *     code | nom | couleur
+ *
  *     [DEPENSES]
  *     date | montant | categorie | libelle | moyen | notes
+ *
+ *     [REVENUS]
+ *     date | montant | source | libelle | moyen | notes
  *
  *     [EVENEMENTS]
  *     date | titre | type | recurrence | rappel_jours | montant | notes | derniere_occurrence
  *
+ * Montants en dinars, séparateur décimal « . », trois décimales (millimes).
+ *
  * Échappement à l'intérieur d'une cellule : `\|` pour une barre verticale,
  * `\n` pour un retour à la ligne, `\\` pour une barre oblique inverse.
+ *
+ * Les fichiers produits par la version 1 (sans sections [SOURCES] ni
+ * [REVENUS]) restent lisibles : les sections absentes donnent simplement
+ * des listes vides.
  */
 object TextFormat {
 
-    const val VERSION = 1
+    const val VERSION = 2
     const val HEADER = "# BudgetApp export v$VERSION"
 
     private const val SECTION_CATEGORIES = "CATEGORIES"
+    private const val SECTION_SOURCES = "SOURCES"
     private const val SECTION_EXPENSES = "DEPENSES"
+    private const val SECTION_INCOMES = "REVENUS"
     private const val SECTION_EVENTS = "EVENEMENTS"
 
     private val ISO: DateTimeFormatter = DateTimeFormatter.ISO_LOCAL_DATE
@@ -47,7 +61,7 @@ object TextFormat {
         sb.appendLine("# Genere le ${generatedOn.format(ISO)}")
         sb.appendLine("# Colonnes separees par « | ». Lignes vides et lignes # ignorees a l'import.")
         sb.appendLine("# Echappement : \\| barre verticale, \\n retour a la ligne, \\\\ antislash.")
-        sb.appendLine("# Montants en euros, separateur decimal « . ». Dates au format AAAA-MM-JJ.")
+        sb.appendLine("# Montants en dinars (3 decimales, millimes). Dates au format AAAA-MM-JJ.")
         sb.appendLine()
 
         sb.appendLine("[$SECTION_CATEGORIES]")
@@ -58,9 +72,16 @@ object TextFormat {
                     c.code,
                     c.name,
                     c.colorHex,
-                    c.monthlyBudgetCents?.let { Money.format(it) } ?: ""
+                    c.monthlyBudgetMillimes?.let { Money.format(it) } ?: ""
                 )
             )
+        }
+        sb.appendLine()
+
+        sb.appendLine("[$SECTION_SOURCES]")
+        sb.appendLine("# code | nom | couleur")
+        for (s in data.sources.sortedBy { it.code }) {
+            sb.appendLine(row(s.code, s.name, s.colorHex))
         }
         sb.appendLine()
 
@@ -70,11 +91,27 @@ object TextFormat {
             sb.appendLine(
                 row(
                     e.date.format(ISO),
-                    Money.format(e.amountCents),
+                    Money.format(e.amountMillimes),
                     e.categoryCode,
                     e.label,
                     e.method,
                     e.notes
+                )
+            )
+        }
+        sb.appendLine()
+
+        sb.appendLine("[$SECTION_INCOMES]")
+        sb.appendLine("# date | montant | source | libelle | moyen | notes")
+        for (i in data.incomes.sortedWith(compareBy({ it.date }, { it.id }))) {
+            sb.appendLine(
+                row(
+                    i.date.format(ISO),
+                    Money.format(i.amountMillimes),
+                    i.sourceCode,
+                    i.label,
+                    i.method,
+                    i.notes
                 )
             )
         }
@@ -90,7 +127,7 @@ object TextFormat {
                     ev.kind.code,
                     ev.recurrence.code,
                     ev.reminderDays.toString(),
-                    ev.amountCents?.let { Money.format(it) } ?: "",
+                    ev.amountMillimes?.let { Money.format(it) } ?: "",
                     ev.notes,
                     ev.lastCompleted?.format(ISO) ?: ""
                 )
@@ -99,8 +136,9 @@ object TextFormat {
         sb.appendLine()
 
         sb.appendLine(
-            "# Fin — ${data.categories.size} categories, " +
-                "${data.expenses.size} depenses, ${data.events.size} evenements."
+            "# Fin — ${data.categories.size} categories, ${data.sources.size} sources, " +
+                "${data.expenses.size} depenses, ${data.incomes.size} revenus, " +
+                "${data.events.size} evenements."
         )
         return sb.toString()
     }
@@ -124,16 +162,20 @@ object TextFormat {
         val warnings: List<String> = emptyList()
     ) {
         val isEmpty: Boolean
-            get() = data.categories.isEmpty() && data.expenses.isEmpty() && data.events.isEmpty()
+            get() = data.categories.isEmpty() && data.sources.isEmpty() &&
+                data.expenses.isEmpty() && data.incomes.isEmpty() && data.events.isEmpty()
 
         val summary: String
-            get() = "${data.expenses.size} dépense(s), ${data.categories.size} catégorie(s), " +
+            get() = "${data.expenses.size} dépense(s), ${data.incomes.size} revenu(s), " +
+                "${data.categories.size} catégorie(s), ${data.sources.size} source(s), " +
                 "${data.events.size} événement(s)"
     }
 
     fun parse(text: String): ImportReport {
         val categories = ArrayList<Category>()
+        val sources = ArrayList<IncomeSource>()
         val expenses = ArrayList<Expense>()
+        val incomes = ArrayList<Income>()
         val events = ArrayList<EventItem>()
         val errors = ArrayList<String>()
         val warnings = ArrayList<String>()
@@ -149,7 +191,9 @@ object TextFormat {
             if (line.startsWith("[") && line.endsWith("]")) {
                 section = line.substring(1, line.length - 1).trim().uppercase()
                 if (section != SECTION_CATEGORIES &&
+                    section != SECTION_SOURCES &&
                     section != SECTION_EXPENSES &&
+                    section != SECTION_INCOMES &&
                     section != SECTION_EVENTS
                 ) {
                     warnings.add("Ligne $lineNumber : section inconnue « $section », ignorée.")
@@ -161,7 +205,9 @@ object TextFormat {
 
             when (section) {
                 SECTION_CATEGORIES -> parseCategory(cells, lineNumber, errors)?.let { categories.add(it) }
+                SECTION_SOURCES -> parseSource(cells, lineNumber, errors)?.let { sources.add(it) }
                 SECTION_EXPENSES -> parseExpense(cells, lineNumber, errors)?.let { expenses.add(it) }
+                SECTION_INCOMES -> parseIncome(cells, lineNumber, errors)?.let { incomes.add(it) }
                 SECTION_EVENTS -> parseEvent(cells, lineNumber, errors)?.let { events.add(it) }
                 "" -> warnings.add("Ligne $lineNumber : donnée hors de toute section, ignorée.")
                 else -> Unit // section inconnue déjà signalée
@@ -169,21 +215,41 @@ object TextFormat {
         }
 
         // Catégories manquantes : on les crée à la volée pour ne perdre aucune dépense.
-        val knownCodes = HashSet<String>()
-        for (c in categories) knownCodes.add(c.code.lowercase())
-        val missing = LinkedHashSet<String>()
+        val knownCategories = HashSet<String>()
+        for (c in categories) knownCategories.add(c.code.lowercase())
+        val missingCategories = LinkedHashSet<String>()
         for (e in expenses) {
-            if (e.categoryCode.isNotEmpty() && !knownCodes.contains(e.categoryCode.lowercase())) {
-                missing.add(e.categoryCode)
+            if (e.categoryCode.isNotEmpty() && !knownCategories.contains(e.categoryCode.lowercase())) {
+                missingCategories.add(e.categoryCode)
             }
         }
-        for (code in missing) {
+        for (code in missingCategories) {
             categories.add(Category(code = code, name = code.replaceFirstChar { it.uppercase() }))
             warnings.add("Catégorie « $code » absente du fichier : elle a été créée automatiquement.")
         }
 
+        // Même principe pour les sources de revenus.
+        val knownSources = HashSet<String>()
+        for (s in sources) knownSources.add(s.code.lowercase())
+        val missingSources = LinkedHashSet<String>()
+        for (i in incomes) {
+            if (i.sourceCode.isNotEmpty() && !knownSources.contains(i.sourceCode.lowercase())) {
+                missingSources.add(i.sourceCode)
+            }
+        }
+        for (code in missingSources) {
+            sources.add(IncomeSource(code = code, name = code.replaceFirstChar { it.uppercase() }))
+            warnings.add("Source « $code » absente du fichier : elle a été créée automatiquement.")
+        }
+
         return ImportReport(
-            data = BudgetData(categories, expenses, events),
+            data = BudgetData(
+                categories = categories,
+                sources = sources,
+                expenses = expenses,
+                incomes = incomes,
+                events = events
+            ),
             errors = errors,
             warnings = warnings
         )
@@ -201,7 +267,7 @@ object TextFormat {
         }
         val color = cells.getOrElse(2) { "" }.trim().ifEmpty { "#7A7A7A" }
         val budgetText = cells.getOrElse(3) { "" }.trim()
-        val budget = if (budgetText.isEmpty()) null else Money.parseToCents(budgetText)
+        val budget = if (budgetText.isEmpty()) null else Money.parse(budgetText)
         if (budgetText.isNotEmpty() && budget == null) {
             errors.add("Ligne $line : budget mensuel illisible « $budgetText ».")
         }
@@ -209,7 +275,24 @@ object TextFormat {
             code = code,
             name = cells[1].trim().ifEmpty { code },
             colorHex = color,
-            monthlyBudgetCents = budget
+            monthlyBudgetMillimes = budget
+        )
+    }
+
+    private fun parseSource(cells: List<String>, line: Int, errors: MutableList<String>): IncomeSource? {
+        if (cells.size < 2) {
+            errors.add("Ligne $line : source incomplète (attendu au moins « code | nom »).")
+            return null
+        }
+        val code = cells[0].trim()
+        if (code.isEmpty()) {
+            errors.add("Ligne $line : code de source vide.")
+            return null
+        }
+        return IncomeSource(
+            code = code,
+            name = cells[1].trim().ifEmpty { code },
+            colorHex = cells.getOrElse(2) { "" }.trim().ifEmpty { "#4C956C" }
         )
     }
 
@@ -223,15 +306,45 @@ object TextFormat {
             errors.add("Ligne $line : date illisible « ${cells[0]} ».")
             return null
         }
-        val amount = Money.parseToCents(cells[1])
+        val amount = Money.parse(cells[1])
         if (amount == null) {
             errors.add("Ligne $line : montant illisible « ${cells[1]} ».")
             return null
         }
         return Expense(
             date = date,
-            amountCents = amount,
+            amountMillimes = amount,
             categoryCode = cells[2].trim(),
+            label = cells.getOrElse(3) { "" }.trim(),
+            method = cells.getOrElse(4) { "" }.trim(),
+            notes = cells.getOrElse(5) { "" }.trim()
+        )
+    }
+
+    private fun parseIncome(cells: List<String>, line: Int, errors: MutableList<String>): Income? {
+        if (cells.size < 3) {
+            errors.add("Ligne $line : revenu incomplet (attendu « date | montant | source »).")
+            return null
+        }
+        val date = parseDate(cells[0])
+        if (date == null) {
+            errors.add("Ligne $line : date de revenu illisible « ${cells[0]} ».")
+            return null
+        }
+        val amount = Money.parse(cells[1])
+        if (amount == null) {
+            errors.add("Ligne $line : montant de revenu illisible « ${cells[1]} ».")
+            return null
+        }
+        val source = cells[2].trim()
+        if (source.isEmpty()) {
+            errors.add("Ligne $line : source de revenu vide.")
+            return null
+        }
+        return Income(
+            date = date,
+            amountMillimes = amount,
+            sourceCode = source,
             label = cells.getOrElse(3) { "" }.trim(),
             method = cells.getOrElse(4) { "" }.trim(),
             notes = cells.getOrElse(5) { "" }.trim()
@@ -259,7 +372,7 @@ object TextFormat {
             errors.add("Ligne $line : délai de rappel illisible « $reminderText », 7 jours appliqués.")
         }
         val amountText = cells.getOrElse(5) { "" }.trim()
-        val amount = if (amountText.isEmpty()) null else Money.parseToCents(amountText)
+        val amount = if (amountText.isEmpty()) null else Money.parse(amountText)
         if (amountText.isNotEmpty() && amount == null) {
             errors.add("Ligne $line : montant d'événement illisible « $amountText ».")
         }
@@ -274,7 +387,7 @@ object TextFormat {
             kind = EventKind.fromCode(cells.getOrElse(2) { "" }),
             recurrence = Recurrence.fromCode(cells.getOrElse(3) { "" }),
             reminderDays = if (reminder < 0) 0 else reminder,
-            amountCents = amount,
+            amountMillimes = amount,
             notes = cells.getOrElse(6) { "" }.trim(),
             lastCompleted = last
         )
