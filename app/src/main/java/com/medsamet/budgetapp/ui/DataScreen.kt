@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.medsamet.budgetapp.domain.Category
+import com.medsamet.budgetapp.domain.IncomeSource
 import com.medsamet.budgetapp.domain.Money
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -121,7 +122,9 @@ fun DataScreen(viewModel: BudgetViewModel) {
                 )
                 Spacer(Modifier.height(12.dp))
                 LabeledRow("Dépenses", data.expenses.size.toString())
+                LabeledRow("Revenus", data.incomes.size.toString())
                 LabeledRow("Catégories", data.categories.size.toString())
+                LabeledRow("Sources de revenus", data.sources.size.toString())
                 LabeledRow("Événements", data.events.size.toString())
                 Spacer(Modifier.height(12.dp))
                 Button(
@@ -251,6 +254,8 @@ fun DataScreen(viewModel: BudgetViewModel) {
 
         item { CategoryManager(viewModel) }
 
+        item { SourceManager(viewModel) }
+
         item { Spacer(Modifier.height(24.dp)) }
     }
 }
@@ -277,7 +282,7 @@ private fun CategoryManager(viewModel: BudgetViewModel) {
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Text(
-                        text = category.monthlyBudgetCents
+                        text = category.monthlyBudgetMillimes
                             ?.let { Money.display(it) } ?: "pas de budget",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -317,12 +322,83 @@ private fun CategoryManager(viewModel: BudgetViewModel) {
                         Category(
                             code = newCode.ifEmpty { newName.trim().lowercase() },
                             name = newName.trim(),
-                            monthlyBudgetCents = Money.parseToCents(newBudget)
+                            monthlyBudgetMillimes = Money.parse(newBudget)
                         )
                     )
                     newName = ""
                     newCode = ""
                     newBudget = ""
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Ajouter")
+        }
+    }
+}
+
+@Composable
+private fun SourceManager(viewModel: BudgetViewModel) {
+    val data = viewModel.data
+    var newCode by remember { mutableStateOf("") }
+    var newName by remember { mutableStateOf("") }
+
+    SectionCard(title = "Sources de revenus") {
+        Text(
+            "Salaire, prime, vente, emprunt… Regrouper les revenus par source " +
+                "permet de savoir d'où vient réellement l'argent.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(12.dp))
+        for (source in data.sources) {
+            Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ColorDot(source.colorHex)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = source.name,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = source.code,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                HorizontalDivider()
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Text("Ajouter une source", style = MaterialTheme.typography.labelLarge)
+        Spacer(Modifier.height(6.dp))
+        OutlinedTextField(
+            value = newName,
+            onValueChange = {
+                newName = it
+                newCode = it.trim().lowercase().replace(" ", "-")
+            },
+            label = { Text("Nom") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(12.dp))
+        Button(
+            onClick = {
+                if (newName.isNotBlank()) {
+                    viewModel.saveSource(
+                        IncomeSource(
+                            code = newCode.ifEmpty { newName.trim().lowercase() },
+                            name = newName.trim()
+                        )
+                    )
+                    newName = ""
+                    newCode = ""
                 }
             },
             modifier = Modifier.fillMaxWidth()
