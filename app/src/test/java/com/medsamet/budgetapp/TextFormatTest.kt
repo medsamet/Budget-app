@@ -87,6 +87,15 @@ class TextFormatTest {
     }
 
     @Test
+    fun parsesAmountsSeparatedByNonBreakingSpaces() {
+        // Char(160) = espace insécable, Char(8239) = espace fine insécable :
+        // ce que produisent les claviers et les copier-coller de sites bancaires.
+        assertEquals(123456L, Money.parseToCents("1" + Char(160) + "234,56"))
+        assertEquals(123456L, Money.parseToCents("1" + Char(8239) + "234,56"))
+        assertEquals(123456L, Money.parseToCents("1" + Char(160) + "234,56 " + Char(8364)))
+    }
+
+    @Test
     fun amountRoundTripIsStable() {
         val values = listOf(0L, 1L, 99L, 100L, 4250L, 999999L, -4250L)
         for (cents in values) {
