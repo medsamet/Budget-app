@@ -11,7 +11,7 @@ Toutes les données restent sur le téléphone : aucun compte, aucun serveur, au
 - **Historique** — navigation mois par mois, total du mois, détail de chaque dépense.
 - **Statistiques** — d'où vient l'argent (par source) et où il part (par catégorie), consommation du budget, évolution des deux flux sur 6 mois.
 - **Prévisions** — projection du **solde net** sur 6 mois : revenus attendus moins dépenses estimées, à partir des moyennes des 3 derniers mois complets et des échéances datées de l'agenda.
-- **Agenda et rappels** — anniversaires, maintenances d'équipement, renouvellements de licence : date, récurrence, délai de rappel, montant prévu. Une vérification quotidienne notifie les échéances qui entrent dans leur fenêtre de rappel.
+- **Agenda et rappels** — anniversaires, maintenances d'équipement, renouvellements de licence : date, récurrence, délai de rappel, montant prévu. Un événement se modifie d'une pression. Une vérification quotidienne notifie les échéances qui entrent dans leur fenêtre de rappel.
 - **Export / import texte** — sauvegarde intégrale dans un fichier texte lisible, modifiable à la main et réimportable sans perte.
 
 ## Récupérer l'APK depuis un téléphone
@@ -159,6 +159,7 @@ Choix techniques notables :
 - **SQLite direct, sans Room** : pas d'annotation processing, donc une chaîne de compilation minimale et plus robuste.
 - **Aucun sélecteur de date graphique** : saisie au clavier avec raccourcis « Aujourd'hui » / « Hier », plus rapide et sans API expérimentale.
 - **Logique métier isolée d'Android** : `domain/` est couvert par des tests unitaires JVM exécutés à chaque compilation.
+- **Champs invisibles préservés à la modification** : les notes d'une dépense et la dernière occurrence traitée d'un événement survivent à une modification, même quand le formulaire ne les montre pas.
 
 ## Tests
 
@@ -182,7 +183,6 @@ Prérequis : JDK 17, SDK Android 35.
 
 ## Feuille de route
 
-- Modification d'un événement de l'agenda (aujourd'hui : suppression puis nouvelle saisie).
 - Dépenses et revenus récurrents automatiques (loyer, salaire).
 - Graphique d'évolution par catégorie.
 - Version signée en release et publication d'APK dans les *Releases* GitHub.
