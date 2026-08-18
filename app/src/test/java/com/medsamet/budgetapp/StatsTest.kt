@@ -4,6 +4,7 @@ import com.medsamet.budgetapp.domain.BudgetData
 import com.medsamet.budgetapp.domain.EventItem
 import com.medsamet.budgetapp.domain.EventKind
 import com.medsamet.budgetapp.domain.Expense
+import com.medsamet.budgetapp.domain.Income
 import com.medsamet.budgetapp.domain.Recurrence
 import com.medsamet.budgetapp.domain.Stats
 import org.junit.Assert.assertEquals
@@ -15,8 +16,11 @@ import java.time.YearMonth
 
 class StatsTest {
 
-    private fun expense(date: String, cents: Long, category: String = "alimentation") =
-        Expense(date = LocalDate.parse(date), amountCents = cents, categoryCode = category)
+    private fun expense(date: String, millimes: Long, category: String = "alimentation") =
+        Expense(date = LocalDate.parse(date), amountMillimes = millimes, categoryCode = category)
+
+    private fun income(date: String, millimes: Long, source: String = "salaire") =
+        Income(date = LocalDate.parse(date), amountMillimes = millimes, sourceCode = source)
 
     // ------------------------------------------------------------ récurrence
 
@@ -113,32 +117,74 @@ class StatsTest {
     @Test
     fun computesMonthlyTotalsAndCategoryBreakdown() {
         val expenses = listOf(
-            expense("2026-08-01", 1000L, "alimentation"),
-            expense("2026-08-15", 2500L, "alimentation"),
-            expense("2026-08-20", 4000L, "loisirs"),
-            expense("2026-07-10", 9999L, "alimentation")
+            expense("2026-08-01", 10000L, "alimentation"),
+            expense("2026-08-15", 25000L, "alimentation"),
+            expense("2026-08-20", 40000L, "loisirs"),
+            expense("2026-07-10", 99990L, "alimentation")
         )
         val august = Stats.expensesOfMonth(expenses, YearMonth.of(2026, 8))
         assertEquals(3, august.size)
-        assertEquals(7500L, Stats.total(august))
+        assertEquals(75000L, Stats.total(august))
 
         val breakdown = Stats.totalsByCategory(august)
-        assertEquals(3500L, breakdown["alimentation"])
-        assertEquals(4000L, breakdown["loisirs"])
+        assertEquals(35000L, breakdown["alimentation"])
+        assertEquals(40000L, breakdown["loisirs"])
     }
 
     @Test
-    fun monthlyHistoryReturnsOldestFirst() {
-        val expenses = listOf(
-            expense("2026-06-01", 1000L),
-            expense("2026-08-01", 3000L)
+    fun computesIncomeTotalsAndSourceBreakdown() {
+        val incomes = listOf(
+            income("2026-08-01", 2450000L, "salaire"),
+            income("2026-08-12", 380500L, "vente"),
+            income("2026-08-20", 150000L, "prime"),
+            income("2026-07-01", 2450000L, "salaire")
         )
-        val history = Stats.monthlyHistory(expenses, YearMonth.of(2026, 8), 3)
+        val august = Stats.incomesOfMonth(incomes, YearMonth.of(2026, 8))
+        assertEquals(3, august.size)
+        assertEquals(2980500L, Stats.totalIncome(august))
+
+        val bySource = Stats.totalsBySource(august)
+        assertEquals(2450000L, bySource["salaire"])
+        assertEquals(380500L, bySource["vente"])
+        assertEquals(150000L, bySource["prime"])
+    }
+
+    @Test
+    fun computesTheMonthlyBalance() {
+        val data = BudgetData(
+            expenses = listOf(expense("2026-08-05", 850000L, "logement")),
+            incomes = listOf(income("2026-08-01", 2450000L))
+        )
+        assertEquals(1600000L, Stats.balanceOfMonth(data, YearMonth.of(2026, 8)))
+    }
+
+    @Test
+    fun aNegativeBalanceIsReportedAsSuch() {
+        val data = BudgetData(
+            expenses = listOf(expense("2026-08-05", 3000000L, "logement")),
+            incomes = listOf(income("2026-08-01", 2450000L))
+        )
+        assertEquals(-550000L, Stats.balanceOfMonth(data, YearMonth.of(2026, 8)))
+    }
+
+    @Test
+    fun monthlyHistoryReturnsOldestFirstWithBothFlows() {
+        val data = BudgetData(
+            expenses = listOf(
+                expense("2026-06-01", 100000L),
+                expense("2026-08-01", 300000L)
+            ),
+            incomes = listOf(income("2026-08-01", 2450000L))
+        )
+        val history = Stats.monthlyHistory(data, YearMonth.of(2026, 8), 3)
         assertEquals(3, history.size)
         assertEquals(YearMonth.of(2026, 6), history[0].month)
-        assertEquals(1000L, history[0].totalCents)
-        assertEquals(0L, history[1].totalCents)
-        assertEquals(3000L, history[2].totalCents)
+        assertEquals(100000L, history[0].expenseMillimes)
+        assertEquals(0L, history[0].incomeMillimes)
+        assertEquals(0L, history[1].expenseMillimes)
+        assertEquals(300000L, history[2].expenseMillimes)
+        assertEquals(2450000L, history[2].incomeMillimes)
+        assertEquals(2150000L, history[2].netMillimes)
     }
 
     // ---------------------------------------------------------- prévisions
@@ -147,18 +193,18 @@ class StatsTest {
     fun forecastAveragesCompleteMonthsAndAddsScheduledEvents() {
         val data = BudgetData(
             expenses = listOf(
-                expense("2026-05-10", 30000L),
-                expense("2026-06-10", 20000L),
-                expense("2026-07-10", 10000L),
+                expense("2026-05-10", 300000L),
+                expense("2026-06-10", 200000L),
+                expense("2026-07-10", 100000L),
                 // Le mois courant est partiel : il ne doit pas tirer la moyenne vers le bas.
-                expense("2026-08-02", 500L)
+                expense("2026-08-02", 5000L)
             ),
             events = listOf(
                 EventItem(
                     date = LocalDate.of(2026, 9, 12),
                     title = "Anniversaire",
                     recurrence = Recurrence.ANNUELLE,
-                    amountCents = 5000L
+                    amountMillimes = 50000L
                 )
             )
         )
@@ -167,13 +213,43 @@ class StatsTest {
 
         assertEquals(6, forecasts.size)
         assertEquals(YearMonth.of(2026, 9), forecasts[0].month)
-        assertEquals(20000L, forecasts[0].recurringCents)
-        assertEquals(5000L, forecasts[0].eventsCents)
-        assertEquals(25000L, forecasts[0].totalCents)
+        assertEquals(200000L, forecasts[0].recurringExpenseMillimes)
+        assertEquals(50000L, forecasts[0].eventsMillimes)
+        assertEquals(250000L, forecasts[0].totalExpenseMillimes)
 
         assertEquals(YearMonth.of(2026, 10), forecasts[1].month)
-        assertEquals(0L, forecasts[1].eventsCents)
-        assertEquals(20000L, forecasts[1].totalCents)
+        assertEquals(0L, forecasts[1].eventsMillimes)
+        assertEquals(200000L, forecasts[1].totalExpenseMillimes)
+    }
+
+    @Test
+    fun forecastProjectsIncomeAndNetBalance() {
+        val data = BudgetData(
+            expenses = listOf(
+                expense("2026-06-10", 1000000L),
+                expense("2026-07-10", 1000000L)
+            ),
+            incomes = listOf(
+                income("2026-06-01", 2400000L),
+                income("2026-07-01", 2400000L)
+            )
+        )
+
+        val forecasts = Stats.forecast(data, LocalDate.of(2026, 8, 18), horizonMonths = 2)
+
+        assertEquals(2400000L, forecasts[0].expectedIncomeMillimes)
+        assertEquals(1000000L, forecasts[0].totalExpenseMillimes)
+        assertEquals(1400000L, forecasts[0].netMillimes)
+    }
+
+    @Test
+    fun forecastNetTurnsNegativeWhenChargesExceedIncome() {
+        val data = BudgetData(
+            expenses = listOf(expense("2026-07-10", 2000000L)),
+            incomes = listOf(income("2026-07-01", 1500000L))
+        )
+        val forecasts = Stats.forecast(data, LocalDate.of(2026, 8, 18), horizonMonths = 1)
+        assertEquals(-500000L, forecasts[0].netMillimes)
     }
 
     @Test
@@ -184,14 +260,14 @@ class StatsTest {
                     date = LocalDate.of(2026, 3, 5),
                     title = "Abonnement",
                     recurrence = Recurrence.MENSUELLE,
-                    amountCents = 1500L
+                    amountMillimes = 15000L
                 )
             )
         )
         val forecasts = Stats.forecast(data, LocalDate.of(2026, 8, 18), horizonMonths = 3)
         assertEquals(3, forecasts.size)
         for (forecast in forecasts) {
-            assertEquals(1500L, forecast.eventsCents)
+            assertEquals(15000L, forecast.eventsMillimes)
         }
     }
 
@@ -199,6 +275,8 @@ class StatsTest {
     fun forecastWithoutHistoryStaysAtZeroWithoutCrashing() {
         val forecasts = Stats.forecast(BudgetData(), LocalDate.of(2026, 8, 18), horizonMonths = 2)
         assertEquals(2, forecasts.size)
-        assertTrue(forecasts.all { it.totalCents == 0L })
+        assertTrue(forecasts.all { it.totalExpenseMillimes == 0L })
+        assertTrue(forecasts.all { it.expectedIncomeMillimes == 0L })
+        assertTrue(forecasts.all { it.netMillimes == 0L })
     }
 }
