@@ -175,7 +175,7 @@ fun EventsScreen(viewModel: BudgetViewModel) {
                                         kind = kind,
                                         recurrence = recurrence,
                                         reminderDays = reminderText.trim().toIntOrNull() ?: 7,
-                                        amountCents = Money.parseToCents(amountText),
+                                        amountMillimes = Money.parse(amountText),
                                         notes = notesText.trim()
                                     )
                                 )
@@ -232,7 +232,7 @@ fun EventsScreen(viewModel: BudgetViewModel) {
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            val amount = event.amountCents
+                            val amount = event.amountMillimes
                             if (amount != null) {
                                 Text(
                                     text = "Montant prévu : " + Money.display(amount),
