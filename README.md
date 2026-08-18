@@ -5,7 +5,7 @@ Toutes les données restent sur le téléphone : aucun compte, aucun serveur, au
 
 ## Fonctionnalités
 
-- **Dépenses par catégorie** — saisie rapide pensée pour le pouce, catégories personnalisables avec budget mensuel.
+- **Dépenses par catégorie** — saisie rapide pensée pour le pouce, catégories personnalisables avec budget mensuel. Une ligne du relevé se modifie d'une simple pression.
 - **Revenus par source** — salaire, prime, vente, emprunt… Une bascule dans l'écran de saisie suffit à passer d'une dépense à un revenu.
 - **Solde mensuel** — revenus encaissés moins dépenses engagées, avec taux d'épargne.
 - **Historique** — navigation mois par mois, total du mois, détail de chaque dépense.
@@ -24,6 +24,8 @@ Le projet est compilé par GitHub Actions ; aucun ordinateur n'est nécessaire.
 4. Décompresser l'archive, puis ouvrir le fichier `.apk`. Android demandera d'autoriser l'installation depuis cette source.
 
 En cas d'échec de compilation, une **issue** est ouverte automatiquement avec la fin du journal : elle se lit directement depuis le téléphone.
+
+Les APK sont signés avec une clé de débogage **fixe**, versionnée dans `ci/debug-keystore.base64` : une nouvelle version s'installe donc par-dessus la précédente sans désinstallation ni perte de données.
 
 ## Format d'échange texte
 
@@ -180,7 +182,7 @@ Prérequis : JDK 17, SDK Android 35.
 
 ## Feuille de route
 
-- Modification d'une dépense ou d'un revenu existant (aujourd'hui : suppression puis nouvelle saisie).
+- Modification d'un événement de l'agenda (aujourd'hui : suppression puis nouvelle saisie).
 - Dépenses et revenus récurrents automatiques (loyer, salaire).
 - Graphique d'évolution par catégorie.
 - Version signée en release et publication d'APK dans les *Releases* GitHub.
