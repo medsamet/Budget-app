@@ -1,5 +1,6 @@
 package com.medsamet.budgetapp.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -28,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,6 +43,7 @@ import com.medsamet.budgetapp.domain.Money
 import com.medsamet.budgetapp.domain.Recurrence
 import com.medsamet.budgetapp.domain.Stats
 import com.medsamet.budgetapp.domain.TextFormat
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
@@ -47,8 +51,16 @@ import java.time.temporal.ChronoUnit
 fun EventsScreen(viewModel: BudgetViewModel) {
     val data = viewModel.data
     val today = LocalDate.now()
+    val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
 
     var showForm by remember { mutableStateOf(false) }
+    // 0 = nouvel evenement ; sinon identifiant de celui en cours de modification.
+    var editingId by remember { mutableStateOf(0L) }
+    // La derniere occurrence traitee n'apparait pas dans le formulaire : on la
+    // conserve ici pour ne pas l'effacer en enregistrant une modification.
+    var editingLastCompleted by remember { mutableStateOf<LocalDate?>(null) }
+
     var titleText by remember { mutableStateOf("") }
     var dateText by remember { mutableStateOf(LocalDate.now().format(dayFormatter)) }
     var kind by remember { mutableStateOf(EventKind.ANNIVERSAIRE) }
@@ -58,9 +70,41 @@ fun EventsScreen(viewModel: BudgetViewModel) {
     var notesText by remember { mutableStateOf("") }
     var formError by remember { mutableStateOf<String?>(null) }
 
+    val isEditing = editingId != 0L
+
+    fun resetForm() {
+        editingId = 0L
+        editingLastCompleted = null
+        titleText = ""
+        dateText = LocalDate.now().format(dayFormatter)
+        kind = EventKind.ANNIVERSAIRE
+        recurrence = Recurrence.ANNUELLE
+        reminderText = "7"
+        amountText = ""
+        notesText = ""
+        formError = null
+        showForm = false
+    }
+
+    fun startEditing(event: EventItem) {
+        editingId = event.id
+        editingLastCompleted = event.lastCompleted
+        titleText = event.title
+        dateText = event.date.format(dayFormatter)
+        kind = event.kind
+        recurrence = event.recurrence
+        reminderText = event.reminderDays.toString()
+        amountText = event.amountMillimes?.let { Money.format(it).replace('.', ',') } ?: ""
+        notesText = event.notes
+        formError = null
+        showForm = true
+        scope.launch { listState.animateScrollToItem(0) }
+    }
+
     val sorted = data.events.sortedBy { Stats.nextOccurrence(it, today) ?: LocalDate.MAX }
 
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -76,15 +120,19 @@ fun EventsScreen(viewModel: BudgetViewModel) {
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold
                 )
-                Button(onClick = { showForm = !showForm }) {
-                    Text(if (showForm) "Fermer" else "Ajouter")
+                if (isEditing) {
+                    OutlinedButton(onClick = { resetForm() }) { Text("Annuler") }
+                } else {
+                    Button(onClick = { if (showForm) resetForm() else showForm = true }) {
+                        Text(if (showForm) "Fermer" else "Ajouter")
+                    }
                 }
             }
         }
 
         if (showForm) {
             item {
-                SectionCard(title = "Nouvel événement") {
+                SectionCard(title = if (isEditing) "Modifier l'événement" else "Nouvel événement") {
                     OutlinedTextField(
                         value = titleText,
                         onValueChange = { titleText = it },
@@ -152,6 +200,17 @@ fun EventsScreen(viewModel: BudgetViewModel) {
                         modifier = Modifier.fillMaxWidth()
                     )
 
+                    val done = editingLastCompleted
+                    if (isEditing && done != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = "Dernière occurrence traitée le " + done.format(dayFormatter) +
+                                " — conservée telle quelle.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
                     val error = formError
                     if (error != null) {
                         Spacer(Modifier.height(8.dp))
@@ -170,24 +229,32 @@ fun EventsScreen(viewModel: BudgetViewModel) {
                             if (formError == null && date != null) {
                                 viewModel.saveEvent(
                                     EventItem(
+                                        id = editingId,
                                         date = date,
                                         title = titleText.trim(),
                                         kind = kind,
                                         recurrence = recurrence,
                                         reminderDays = reminderText.trim().toIntOrNull() ?: 7,
                                         amountMillimes = Money.parse(amountText),
-                                        notes = notesText.trim()
+                                        notes = notesText.trim(),
+                                        lastCompleted = editingLastCompleted
                                     )
                                 )
-                                titleText = ""
-                                amountText = ""
-                                notesText = ""
-                                showForm = false
+                                resetForm()
                             }
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Enregistrer")
+                        Text(if (isEditing) "Enregistrer les modifications" else "Enregistrer")
+                    }
+                    if (isEditing) {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = { resetForm() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Annuler la modification")
+                        }
                     }
                 }
             }
@@ -203,6 +270,14 @@ fun EventsScreen(viewModel: BudgetViewModel) {
                     )
                 }
             }
+        } else {
+            item {
+                Text(
+                    text = "Touche un événement pour le modifier.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         for (event in sorted) {
@@ -210,10 +285,14 @@ fun EventsScreen(viewModel: BudgetViewModel) {
                 val next = Stats.nextOccurrence(event, today)
                 val days = if (next == null) null else ChronoUnit.DAYS.between(today, next)
                 val isDue = days != null && days <= event.reminderDays.toLong()
+                val selected = isEditing && editingId == event.id
 
                 Column {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { startEditing(event) }
+                            .padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
@@ -221,16 +300,24 @@ fun EventsScreen(viewModel: BudgetViewModel) {
                                 text = event.title,
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.SemiBold,
-                                color = if (isDue) {
-                                    MaterialTheme.colorScheme.error
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface
+                                color = when {
+                                    selected -> MaterialTheme.colorScheme.primary
+                                    isDue -> MaterialTheme.colorScheme.error
+                                    else -> MaterialTheme.colorScheme.onSurface
                                 }
                             )
                             Text(
-                                text = buildEventSubtitle(event, next, days),
+                                text = if (selected) {
+                                    "en cours de modification"
+                                } else {
+                                    buildEventSubtitle(event, next, days)
+                                },
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (selected) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
                             )
                             val amount = event.amountMillimes
                             if (amount != null) {
@@ -250,7 +337,12 @@ fun EventsScreen(viewModel: BudgetViewModel) {
                         IconButton(onClick = { viewModel.markEventDone(event) }) {
                             Icon(Icons.Filled.Check, contentDescription = "Marquer comme fait")
                         }
-                        IconButton(onClick = { viewModel.deleteEvent(event.id) }) {
+                        IconButton(
+                            onClick = {
+                                if (selected) resetForm()
+                                viewModel.deleteEvent(event.id)
+                            }
+                        ) {
                             Icon(Icons.Filled.Delete, contentDescription = "Supprimer")
                         }
                     }
