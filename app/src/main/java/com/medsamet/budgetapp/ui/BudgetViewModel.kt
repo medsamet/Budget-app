@@ -11,6 +11,8 @@ import com.medsamet.budgetapp.domain.BudgetData
 import com.medsamet.budgetapp.domain.Category
 import com.medsamet.budgetapp.domain.EventItem
 import com.medsamet.budgetapp.domain.Expense
+import com.medsamet.budgetapp.domain.Income
+import com.medsamet.budgetapp.domain.IncomeSource
 import com.medsamet.budgetapp.domain.TextFormat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -64,6 +66,40 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             withContext(Dispatchers.IO) { repository.deleteExpense(id) }
             message = "Dépense supprimée"
+            refresh()
+        }
+    }
+
+    // ------------------------------------------------------------- revenus
+
+    fun saveIncome(income: Income) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { repository.upsertIncome(income) }
+            message = if (income.id > 0L) "Revenu modifié" else "Revenu enregistré"
+            refresh()
+        }
+    }
+
+    fun deleteIncome(id: Long) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { repository.deleteIncome(id) }
+            message = "Revenu supprimé"
+            refresh()
+        }
+    }
+
+    fun saveSource(source: IncomeSource) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { repository.upsertSource(source) }
+            message = "Source enregistrée"
+            refresh()
+        }
+    }
+
+    fun deleteSource(id: Long) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { repository.deleteSource(id) }
+            message = "Source supprimée"
             refresh()
         }
     }
