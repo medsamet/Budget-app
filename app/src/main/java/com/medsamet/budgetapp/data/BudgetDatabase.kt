@@ -10,6 +10,8 @@ import com.medsamet.budgetapp.domain.Category
 import com.medsamet.budgetapp.domain.EventItem
 import com.medsamet.budgetapp.domain.EventKind
 import com.medsamet.budgetapp.domain.Expense
+import com.medsamet.budgetapp.domain.Income
+import com.medsamet.budgetapp.domain.IncomeSource
 import com.medsamet.budgetapp.domain.Recurrence
 import java.time.LocalDate
 
@@ -19,6 +21,8 @@ import java.time.LocalDate
  * Choix délibéré : pas de Room ni d'annotation processing, afin de réduire
  * au minimum les dépendances de compilation (le projet est compilé
  * exclusivement par GitHub Actions).
+ *
+ * Schéma version 2 : montants en millimes, tables des sources et des revenus.
  */
 class BudgetDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_VERSION) {
 
@@ -31,6 +35,16 @@ class BudgetDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
                 name TEXT NOT NULL,
                 color TEXT NOT NULL,
                 budget INTEGER
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            CREATE TABLE sources (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                color TEXT NOT NULL
             )
             """.trimIndent()
         )
@@ -50,6 +64,20 @@ class BudgetDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
         db.execSQL("CREATE INDEX idx_expenses_date ON expenses(date)")
         db.execSQL(
             """
+            CREATE TABLE incomes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                amount INTEGER NOT NULL,
+                source TEXT NOT NULL,
+                label TEXT NOT NULL DEFAULT '',
+                method TEXT NOT NULL DEFAULT '',
+                notes TEXT NOT NULL DEFAULT ''
+            )
+            """.trimIndent()
+        )
+        db.execSQL("CREATE INDEX idx_incomes_date ON incomes(date)")
+        db.execSQL(
+            """
             CREATE TABLE events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT NOT NULL,
@@ -64,10 +92,45 @@ class BudgetDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
             """.trimIndent()
         )
         seedDefaultCategories(db)
+        seedDefaultSources(db)
     }
 
+    /**
+     * Version 1 -> 2 : les montants étaient stockés en centimes d'euro.
+     * Ils sont multipliés par 10 pour devenir des millimes, ce qui conserve
+     * la valeur numérique affichée (42,50 devient 42,500).
+     */
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // Aucune migration à ce stade : le schéma est en version 1.
+        if (oldVersion < 2) {
+            db.execSQL("UPDATE expenses SET amount = amount * 10")
+            db.execSQL("UPDATE categories SET budget = budget * 10 WHERE budget IS NOT NULL")
+            db.execSQL("UPDATE events SET amount = amount * 10 WHERE amount IS NOT NULL")
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS sources (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    code TEXT NOT NULL UNIQUE,
+                    name TEXT NOT NULL,
+                    color TEXT NOT NULL
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS incomes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date TEXT NOT NULL,
+                    amount INTEGER NOT NULL,
+                    source TEXT NOT NULL,
+                    label TEXT NOT NULL DEFAULT '',
+                    method TEXT NOT NULL DEFAULT '',
+                    notes TEXT NOT NULL DEFAULT ''
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_incomes_date ON incomes(date)")
+            seedDefaultSources(db)
+        }
     }
 
     private fun seedDefaultCategories(db: SQLiteDatabase) {
@@ -85,13 +148,31 @@ class BudgetDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
             values.put("code", code)
             values.put("name", name)
             values.put("color", color)
-            db.insert("categories", null, values)
+            db.insertWithOnConflict("categories", null, values, SQLiteDatabase.CONFLICT_IGNORE)
+        }
+    }
+
+    private fun seedDefaultSources(db: SQLiteDatabase) {
+        val defaults = listOf(
+            Triple("salaire", "Salaire", "#2E7D8F"),
+            Triple("prime", "Prime", "#4C956C"),
+            Triple("vente", "Vente", "#8A6552"),
+            Triple("emprunt", "Emprunt", "#C1666B"),
+            Triple("aide", "Aide / don", "#7C6BB0"),
+            Triple("autre", "Autre", "#7A7A7A")
+        )
+        for ((code, name, color) in defaults) {
+            val values = ContentValues()
+            values.put("code", code)
+            values.put("name", name)
+            values.put("color", color)
+            db.insertWithOnConflict("sources", null, values, SQLiteDatabase.CONFLICT_IGNORE)
         }
     }
 
     companion object {
         private const val DB_NAME = "budget.db"
-        private const val DB_VERSION = 1
+        private const val DB_VERSION = 2
     }
 }
 
@@ -104,7 +185,9 @@ class BudgetRepository(context: Context) {
 
     fun loadAll(): BudgetData = BudgetData(
         categories = loadCategories(),
+        sources = loadSources(),
         expenses = loadExpenses(),
+        incomes = loadIncomes(),
         events = loadEvents()
     )
 
@@ -120,7 +203,26 @@ class BudgetRepository(context: Context) {
                         code = cursor.getString(cursor.getColumnIndexOrThrow("code")),
                         name = cursor.getString(cursor.getColumnIndexOrThrow("name")),
                         colorHex = cursor.getString(cursor.getColumnIndexOrThrow("color")),
-                        monthlyBudgetCents = cursor.getLongOrNull("budget")
+                        monthlyBudgetMillimes = cursor.getLongOrNull("budget")
+                    )
+                )
+            }
+        }
+        return result
+    }
+
+    fun loadSources(): List<IncomeSource> {
+        val result = ArrayList<IncomeSource>()
+        helper.readableDatabase.query(
+            "sources", null, null, null, null, null, "name ASC"
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                result.add(
+                    IncomeSource(
+                        id = cursor.getLong(cursor.getColumnIndexOrThrow("id")),
+                        code = cursor.getString(cursor.getColumnIndexOrThrow("code")),
+                        name = cursor.getString(cursor.getColumnIndexOrThrow("name")),
+                        colorHex = cursor.getString(cursor.getColumnIndexOrThrow("color"))
                     )
                 )
             }
@@ -140,8 +242,32 @@ class BudgetRepository(context: Context) {
                     Expense(
                         id = cursor.getLong(cursor.getColumnIndexOrThrow("id")),
                         date = date,
-                        amountCents = cursor.getLong(cursor.getColumnIndexOrThrow("amount")),
+                        amountMillimes = cursor.getLong(cursor.getColumnIndexOrThrow("amount")),
                         categoryCode = cursor.getString(cursor.getColumnIndexOrThrow("category")),
+                        label = cursor.getString(cursor.getColumnIndexOrThrow("label")),
+                        method = cursor.getString(cursor.getColumnIndexOrThrow("method")),
+                        notes = cursor.getString(cursor.getColumnIndexOrThrow("notes"))
+                    )
+                )
+            }
+        }
+        return result
+    }
+
+    fun loadIncomes(): List<Income> {
+        val result = ArrayList<Income>()
+        helper.readableDatabase.query(
+            "incomes", null, null, null, null, null, "date DESC, id DESC"
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                val date = parseDateOrNull(cursor.getString(cursor.getColumnIndexOrThrow("date")))
+                    ?: continue
+                result.add(
+                    Income(
+                        id = cursor.getLong(cursor.getColumnIndexOrThrow("id")),
+                        date = date,
+                        amountMillimes = cursor.getLong(cursor.getColumnIndexOrThrow("amount")),
+                        sourceCode = cursor.getString(cursor.getColumnIndexOrThrow("source")),
                         label = cursor.getString(cursor.getColumnIndexOrThrow("label")),
                         method = cursor.getString(cursor.getColumnIndexOrThrow("method")),
                         notes = cursor.getString(cursor.getColumnIndexOrThrow("notes"))
@@ -170,7 +296,7 @@ class BudgetRepository(context: Context) {
                             cursor.getString(cursor.getColumnIndexOrThrow("recurrence"))
                         ),
                         reminderDays = cursor.getInt(cursor.getColumnIndexOrThrow("reminder_days")),
-                        amountCents = cursor.getLongOrNull("amount"),
+                        amountMillimes = cursor.getLongOrNull("amount"),
                         notes = cursor.getString(cursor.getColumnIndexOrThrow("notes")),
                         lastCompleted = cursor.getStringOrNull("last_completed")
                             ?.let { parseDateOrNull(it) }
@@ -188,7 +314,7 @@ class BudgetRepository(context: Context) {
         values.put("code", category.code)
         values.put("name", category.name)
         values.put("color", category.colorHex)
-        val budget = category.monthlyBudgetCents
+        val budget = category.monthlyBudgetMillimes
         if (budget != null) values.put("budget", budget) else values.putNull("budget")
         val db = helper.writableDatabase
         return if (category.id > 0L) {
@@ -203,10 +329,28 @@ class BudgetRepository(context: Context) {
         helper.writableDatabase.delete("categories", "id = ?", arrayOf(id.toString()))
     }
 
+    fun upsertSource(source: IncomeSource): Long {
+        val values = ContentValues()
+        values.put("code", source.code)
+        values.put("name", source.name)
+        values.put("color", source.colorHex)
+        val db = helper.writableDatabase
+        return if (source.id > 0L) {
+            db.update("sources", values, "id = ?", arrayOf(source.id.toString()))
+            source.id
+        } else {
+            db.insertWithOnConflict("sources", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        }
+    }
+
+    fun deleteSource(id: Long) {
+        helper.writableDatabase.delete("sources", "id = ?", arrayOf(id.toString()))
+    }
+
     fun upsertExpense(expense: Expense): Long {
         val values = ContentValues()
         values.put("date", expense.date.toString())
-        values.put("amount", expense.amountCents)
+        values.put("amount", expense.amountMillimes)
         values.put("category", expense.categoryCode)
         values.put("label", expense.label)
         values.put("method", expense.method)
@@ -224,6 +368,27 @@ class BudgetRepository(context: Context) {
         helper.writableDatabase.delete("expenses", "id = ?", arrayOf(id.toString()))
     }
 
+    fun upsertIncome(income: Income): Long {
+        val values = ContentValues()
+        values.put("date", income.date.toString())
+        values.put("amount", income.amountMillimes)
+        values.put("source", income.sourceCode)
+        values.put("label", income.label)
+        values.put("method", income.method)
+        values.put("notes", income.notes)
+        val db = helper.writableDatabase
+        return if (income.id > 0L) {
+            db.update("incomes", values, "id = ?", arrayOf(income.id.toString()))
+            income.id
+        } else {
+            db.insert("incomes", null, values)
+        }
+    }
+
+    fun deleteIncome(id: Long) {
+        helper.writableDatabase.delete("incomes", "id = ?", arrayOf(id.toString()))
+    }
+
     fun upsertEvent(event: EventItem): Long {
         val values = ContentValues()
         values.put("date", event.date.toString())
@@ -231,7 +396,7 @@ class BudgetRepository(context: Context) {
         values.put("kind", event.kind.code)
         values.put("recurrence", event.recurrence.code)
         values.put("reminder_days", event.reminderDays)
-        val eventAmount = event.amountCents
+        val eventAmount = event.amountMillimes
         if (eventAmount != null) values.put("amount", eventAmount) else values.putNull("amount")
         values.put("notes", event.notes)
         val lastCompleted = event.lastCompleted
@@ -261,8 +426,10 @@ class BudgetRepository(context: Context) {
         db.beginTransaction()
         try {
             db.delete("expenses", null, null)
+            db.delete("incomes", null, null)
             db.delete("events", null, null)
             db.delete("categories", null, null)
+            db.delete("sources", null, null)
             writeAll(db, data)
             db.setTransactionSuccessful()
         } finally {
@@ -288,19 +455,36 @@ class BudgetRepository(context: Context) {
             values.put("code", category.code)
             values.put("name", category.name)
             values.put("color", category.colorHex)
-            val budget = category.monthlyBudgetCents
+            val budget = category.monthlyBudgetMillimes
             if (budget != null) values.put("budget", budget) else values.putNull("budget")
             db.insertWithOnConflict("categories", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        }
+        for (source in data.sources) {
+            val values = ContentValues()
+            values.put("code", source.code)
+            values.put("name", source.name)
+            values.put("color", source.colorHex)
+            db.insertWithOnConflict("sources", null, values, SQLiteDatabase.CONFLICT_REPLACE)
         }
         for (expense in data.expenses) {
             val values = ContentValues()
             values.put("date", expense.date.toString())
-            values.put("amount", expense.amountCents)
+            values.put("amount", expense.amountMillimes)
             values.put("category", expense.categoryCode)
             values.put("label", expense.label)
             values.put("method", expense.method)
             values.put("notes", expense.notes)
             db.insert("expenses", null, values)
+        }
+        for (income in data.incomes) {
+            val values = ContentValues()
+            values.put("date", income.date.toString())
+            values.put("amount", income.amountMillimes)
+            values.put("source", income.sourceCode)
+            values.put("label", income.label)
+            values.put("method", income.method)
+            values.put("notes", income.notes)
+            db.insert("incomes", null, values)
         }
         for (event in data.events) {
             val values = ContentValues()
@@ -309,7 +493,7 @@ class BudgetRepository(context: Context) {
             values.put("kind", event.kind.code)
             values.put("recurrence", event.recurrence.code)
             values.put("reminder_days", event.reminderDays)
-            val eventAmount = event.amountCents
+            val eventAmount = event.amountMillimes
             if (eventAmount != null) values.put("amount", eventAmount) else values.putNull("amount")
             values.put("notes", event.notes)
             val lastCompleted = event.lastCompleted

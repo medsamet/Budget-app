@@ -37,7 +37,7 @@ class ReminderWorker(
                     days == 1L -> "demain"
                     else -> "dans $days jours"
                 }
-                val amount = event.amountCents
+                val amount = event.amountMillimes
                 val amountText = if (amount != null) " — ${Money.display(amount)}" else ""
                 Reminders.notify(
                     context = applicationContext,
