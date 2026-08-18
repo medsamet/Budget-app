@@ -1,0 +1,46 @@
+# BudgetApp export v1
+# Genere le 2026-08-18
+# Colonnes separees par « | ». Lignes vides et lignes # ignorees a l'import.
+# Echappement : \| barre verticale, \n retour a la ligne, \\ antislash.
+# Montants en euros, separateur decimal « . ». Dates au format AAAA-MM-JJ.
+
+[CATEGORIES]
+# code | nom | couleur | budget_mensuel
+abonnements | Abonnements | #8A6552 | 60.00
+alimentation | Alimentation | #E4A11B | 400.00
+loisirs | Loisirs | #4C956C | 120.00
+logement | Logement | #2E7D8F | 850.00
+sante | Santé | #C1666B |
+transport | Transport | #7C6BB0 | 150.00
+
+[DEPENSES]
+# date | montant | categorie | libelle | moyen | notes
+2026-06-03 | 850.00 | logement | Loyer juin | virement |
+2026-06-07 | 96.40 | alimentation | Courses hebdo | CB |
+2026-06-14 | 88.10 | alimentation | Courses hebdo | CB |
+2026-06-15 | 62.00 | transport | Carburant | CB |
+2026-06-21 | 104.75 | alimentation | Courses hebdo | CB |
+2026-06-24 | 24.00 | loisirs | Restaurant | CB |
+2026-06-28 | 91.30 | alimentation | Courses hebdo | CB |
+2026-07-03 | 850.00 | logement | Loyer juillet | virement |
+2026-07-05 | 99.20 | alimentation | Courses hebdo | CB |
+2026-07-11 | 45.00 | sante | Pharmacie | CB |
+2026-07-12 | 87.60 | alimentation | Courses hebdo | CB |
+2026-07-18 | 58.90 | transport | Carburant | CB |
+2026-07-19 | 112.30 | alimentation | Courses hebdo | CB |
+2026-07-22 | 32.50 | loisirs | Cinéma en famille | CB | séance de 20h
+2026-07-26 | 94.80 | alimentation | Courses hebdo | CB |
+2026-08-03 | 850.00 | logement | Loyer août | virement |
+2026-08-06 | 101.20 | alimentation | Courses hebdo | CB |
+2026-08-09 | 15.99 | abonnements | Streaming | prélèvement |
+2026-08-13 | 79.40 | alimentation | Courses hebdo | CB |
+2026-08-16 | 61.20 | transport | Carburant | CB |
+
+[EVENEMENTS]
+# date | titre | type | recurrence | rappel_jours | montant | notes | derniere_occurrence
+2026-09-12 | Anniversaire Lina | ANNIVERSAIRE | ANNUELLE | 14 | 50.00 | prévoir le gâteau |
+2026-09-30 | Révision voiture | MAINTENANCE | ANNUELLE | 21 | 180.00 | garage du centre | 2025-09-28
+2026-10-15 | Renouvellement antivirus | LICENCE | ANNUELLE | 30 | 39.90 | |
+2026-11-03 | Assurance habitation | ASSURANCE | ANNUELLE | 30 | 289.00 | | 2025-11-03
+2026-09-05 | Entretien chaudière | MAINTENANCE | ANNUELLE | 30 | 120.00 | contrat annuel obligatoire |
+2026-08-25 | Abonnement téléphone | LICENCE | MENSUELLE | 3 | 19.99 | |
