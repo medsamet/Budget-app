@@ -1,5 +1,6 @@
 package com.medsamet.budgetapp.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -26,10 +28,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +46,7 @@ import com.medsamet.budgetapp.domain.Income
 import com.medsamet.budgetapp.domain.Money
 import com.medsamet.budgetapp.domain.Stats
 import com.medsamet.budgetapp.domain.TextFormat
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -53,14 +58,22 @@ private data class MonthEntry(
     val amountMillimes: Long,
     val title: String,
     val subtitle: String,
-    val colorHex: String
+    val colorHex: String,
+    val code: String,
+    val label: String,
+    val method: String,
+    val notes: String
 )
 
 @Composable
 fun ExpensesScreen(viewModel: BudgetViewModel) {
     val data = viewModel.data
+    val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
     var month by remember { mutableStateOf(YearMonth.now()) }
 
+    // 0 = nouvelle saisie ; sinon identifiant de la ligne en cours de modification.
+    var editingId by remember { mutableStateOf(0L) }
     var incomeMode by remember { mutableStateOf(false) }
     var amountText by remember { mutableStateOf("") }
     var labelText by remember { mutableStateOf("") }
@@ -68,7 +81,20 @@ fun ExpensesScreen(viewModel: BudgetViewModel) {
     var categoryCode by remember { mutableStateOf("") }
     var sourceCode by remember { mutableStateOf("") }
     var methodText by remember { mutableStateOf("") }
+    var notesText by remember { mutableStateOf("") }
     var formError by remember { mutableStateOf<String?>(null) }
+
+    val isEditing = editingId != 0L
+
+    fun resetForm() {
+        editingId = 0L
+        amountText = ""
+        labelText = ""
+        methodText = ""
+        notesText = ""
+        formError = null
+        dateText = LocalDate.now().format(dayFormatter)
+    }
 
     // Sélection effective : le premier élément de la liste tant que rien n'est choisi.
     val effectiveCategory = if (categoryCode.isEmpty()) {
@@ -101,7 +127,11 @@ fun ExpensesScreen(viewModel: BudgetViewModel) {
                 subtitle = e.date.format(dayFormatter) +
                     " · " + (category?.name ?: e.categoryCode) +
                     if (e.method.isEmpty()) "" else " · " + e.method,
-                colorHex = category?.colorHex ?: "#7A7A7A"
+                colorHex = category?.colorHex ?: "#7A7A7A",
+                code = e.categoryCode,
+                label = e.label,
+                method = e.method,
+                notes = e.notes
             )
         )
     }
@@ -117,43 +147,83 @@ fun ExpensesScreen(viewModel: BudgetViewModel) {
                 subtitle = i.date.format(dayFormatter) +
                     " · " + (source?.name ?: i.sourceCode) +
                     if (i.method.isEmpty()) "" else " · " + i.method,
-                colorHex = source?.colorHex ?: "#4C956C"
+                colorHex = source?.colorHex ?: "#4C956C",
+                code = i.sourceCode,
+                label = i.label,
+                method = i.method,
+                notes = i.notes
             )
         )
     }
     entries.sortWith(compareByDescending<MonthEntry> { it.date }.thenByDescending { it.id })
 
+    fun startEditing(entry: MonthEntry) {
+        editingId = entry.id
+        incomeMode = entry.isIncome
+        amountText = Money.format(entry.amountMillimes).replace('.', ',')
+        labelText = entry.label
+        dateText = entry.date.format(dayFormatter)
+        methodText = entry.method
+        notesText = entry.notes
+        if (entry.isIncome) sourceCode = entry.code else categoryCode = entry.code
+        formError = null
+        scope.launch { listState.animateScrollToItem(0) }
+    }
+
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
             Spacer(Modifier.height(8.dp))
-            Row(modifier = Modifier.fillMaxWidth()) {
-                if (!incomeMode) {
-                    Button(onClick = { incomeMode = false }, modifier = Modifier.weight(1f)) {
-                        Text("Dépense")
-                    }
-                } else {
-                    OutlinedButton(onClick = { incomeMode = false }, modifier = Modifier.weight(1f)) {
-                        Text("Dépense")
-                    }
+            if (isEditing) {
+                // Pendant une modification, le type est fige : une depense ne se
+                // transforme pas en revenu, ce serait une autre ecriture.
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (incomeMode) "Modification d'un revenu" else "Modification d'une dépense",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    TextButton(onClick = { resetForm() }) { Text("Annuler") }
                 }
-                Spacer(Modifier.width(8.dp))
-                if (incomeMode) {
-                    Button(onClick = { incomeMode = true }, modifier = Modifier.weight(1f)) {
-                        Text("Revenu")
+            } else {
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    if (!incomeMode) {
+                        Button(onClick = { incomeMode = false }, modifier = Modifier.weight(1f)) {
+                            Text("Dépense")
+                        }
+                    } else {
+                        OutlinedButton(onClick = { incomeMode = false }, modifier = Modifier.weight(1f)) {
+                            Text("Dépense")
+                        }
                     }
-                } else {
-                    OutlinedButton(onClick = { incomeMode = true }, modifier = Modifier.weight(1f)) {
-                        Text("Revenu")
+                    Spacer(Modifier.width(8.dp))
+                    if (incomeMode) {
+                        Button(onClick = { incomeMode = true }, modifier = Modifier.weight(1f)) {
+                            Text("Revenu")
+                        }
+                    } else {
+                        OutlinedButton(onClick = { incomeMode = true }, modifier = Modifier.weight(1f)) {
+                            Text("Revenu")
+                        }
                     }
                 }
             }
         }
 
         item {
-            SectionCard(title = if (incomeMode) "Nouveau revenu" else "Nouvelle dépense") {
+            val cardTitle = when {
+                isEditing -> "Modifier"
+                incomeMode -> "Nouveau revenu"
+                else -> "Nouvelle dépense"
+            }
+            SectionCard(title = cardTitle) {
                 OutlinedTextField(
                     value = amountText,
                     onValueChange = { amountText = it },
@@ -212,6 +282,13 @@ fun ExpensesScreen(viewModel: BudgetViewModel) {
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = notesText,
+                    onValueChange = { notesText = it },
+                    label = { Text("Notes (facultatif)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
 
                 val error = formError
                 if (error != null) {
@@ -235,33 +312,44 @@ fun ExpensesScreen(viewModel: BudgetViewModel) {
                             if (incomeMode) {
                                 viewModel.saveIncome(
                                     Income(
+                                        id = editingId,
                                         date = date,
                                         amountMillimes = amount,
                                         sourceCode = effectiveSource,
                                         label = labelText.trim(),
-                                        method = methodText.trim()
+                                        method = methodText.trim(),
+                                        notes = notesText.trim()
                                     )
                                 )
                             } else {
                                 viewModel.saveExpense(
                                     Expense(
+                                        id = editingId,
                                         date = date,
                                         amountMillimes = amount,
                                         categoryCode = effectiveCategory,
                                         label = labelText.trim(),
-                                        method = methodText.trim()
+                                        method = methodText.trim(),
+                                        notes = notesText.trim()
                                     )
                                 )
                             }
-                            amountText = ""
-                            labelText = ""
-                            methodText = ""
                             month = YearMonth.of(date.year, date.monthValue)
+                            resetForm()
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Enregistrer")
+                    Text(if (isEditing) "Enregistrer les modifications" else "Enregistrer")
+                }
+                if (isEditing) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { resetForm() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Annuler la modification")
+                    }
                 }
             }
         }
@@ -312,6 +400,14 @@ fun ExpensesScreen(viewModel: BudgetViewModel) {
                     Money.displaySigned(balance),
                     valueColor = if (balance < 0L) MaterialTheme.colorScheme.error else null
                 )
+                if (entries.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "Touche une ligne pour la modifier.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 
@@ -326,19 +422,31 @@ fun ExpensesScreen(viewModel: BudgetViewModel) {
         }
 
         items(entries, key = { (if (it.isIncome) "revenu-" else "depense-") + it.id }) { entry ->
+            val selected = isEditing && editingId == entry.id && incomeMode == entry.isIncome
             Column {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { startEditing(entry) }
+                        .padding(vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     ColorDot(entry.colorHex)
                     Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(entry.title, style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            text = entry.subtitle,
+                            text = entry.title,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                        )
+                        Text(
+                            text = if (selected) entry.subtitle + " · en cours de modification" else entry.subtitle,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (selected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
                         )
                     }
                     Text(
@@ -357,6 +465,7 @@ fun ExpensesScreen(viewModel: BudgetViewModel) {
                     )
                     IconButton(
                         onClick = {
+                            if (selected) resetForm()
                             if (entry.isIncome) {
                                 viewModel.deleteIncome(entry.id)
                             } else {
