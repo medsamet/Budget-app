@@ -18,6 +18,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -26,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +48,7 @@ import com.medsamet.budgetapp.domain.Stats
 import com.medsamet.budgetapp.domain.TextFormat
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.temporal.ChronoUnit
 
 @Composable
@@ -53,6 +57,10 @@ fun EventsScreen(viewModel: BudgetViewModel) {
     val today = LocalDate.now()
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+
+    var calendarMode by remember { mutableStateOf(false) }
+    var calendarMonth by remember { mutableStateOf(YearMonth.now()) }
+    var selectedDay by remember { mutableStateOf<LocalDate?>(null) }
 
     var showForm by remember { mutableStateOf(false) }
     // 0 = nouvel evenement ; sinon identifiant de celui en cours de modification.
@@ -102,6 +110,11 @@ fun EventsScreen(viewModel: BudgetViewModel) {
     }
 
     val sorted = data.events.sortedBy { Stats.nextOccurrence(it, today) ?: LocalDate.MAX }
+    val monthEventsByDay = Stats.eventsByDay(
+        data.events,
+        calendarMonth.atDay(1),
+        calendarMonth.atEndOfMonth()
+    )
 
     LazyColumn(
         state = listState,
@@ -125,6 +138,30 @@ fun EventsScreen(viewModel: BudgetViewModel) {
                 } else {
                     Button(onClick = { if (showForm) resetForm() else showForm = true }) {
                         Text(if (showForm) "Fermer" else "Ajouter")
+                    }
+                }
+            }
+        }
+
+        item {
+            Row(modifier = Modifier.fillMaxWidth()) {
+                if (!calendarMode) {
+                    Button(onClick = { calendarMode = false }, modifier = Modifier.weight(1f)) {
+                        Text("Liste")
+                    }
+                } else {
+                    OutlinedButton(onClick = { calendarMode = false }, modifier = Modifier.weight(1f)) {
+                        Text("Liste")
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                if (calendarMode) {
+                    Button(onClick = { calendarMode = true }, modifier = Modifier.weight(1f)) {
+                        Text("Calendrier")
+                    }
+                } else {
+                    OutlinedButton(onClick = { calendarMode = true }, modifier = Modifier.weight(1f)) {
+                        Text("Calendrier")
                     }
                 }
             }
@@ -260,99 +297,240 @@ fun EventsScreen(viewModel: BudgetViewModel) {
             }
         }
 
-        if (sorted.isEmpty()) {
+        if (calendarMode) {
             item {
-                SectionCard(title = "Aucun événement") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = {
+                        calendarMonth = calendarMonth.minusMonths(1)
+                        selectedDay = null
+                    }) {
+                        Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = "Mois précédent")
+                    }
                     Text(
-                        "Ajoute un anniversaire, une maintenance d'équipement ou " +
-                            "une date de renouvellement : l'application te préviendra " +
-                            "avant l'échéance."
+                        text = monthLabel(calendarMonth),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    IconButton(onClick = {
+                        calendarMonth = calendarMonth.plusMonths(1)
+                        selectedDay = null
+                    }) {
+                        Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "Mois suivant")
+                    }
+                }
+            }
+
+            item {
+                MonthCalendar(
+                    month = calendarMonth,
+                    eventsByDay = monthEventsByDay,
+                    today = today,
+                    selectedDay = selectedDay,
+                    onSelectDay = { date ->
+                        selectedDay = if (selectedDay == date) null else date
+                    }
+                )
+            }
+
+            val chosen = selectedDay
+            val occurrences = ArrayList<Pair<LocalDate, EventItem>>()
+            if (chosen != null) {
+                for (event in monthEventsByDay[chosen] ?: emptyList()) {
+                    occurrences.add(Pair(chosen, event))
+                }
+            } else {
+                for ((date, dayEvents) in monthEventsByDay) {
+                    for (event in dayEvents) occurrences.add(Pair(date, event))
+                }
+                occurrences.sortBy { it.first }
+            }
+
+            item {
+                Text(
+                    text = if (chosen != null) {
+                        longDayLabel(chosen)
+                    } else {
+                        "Tout le mois — " + occurrences.size + " échéance(s)"
+                    },
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            if (occurrences.isEmpty()) {
+                item {
+                    Text(
+                        text = if (chosen != null) {
+                            "Aucune échéance ce jour-là."
+                        } else {
+                            "Aucune échéance ce mois-ci."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 8.dp)
                     )
                 }
             }
-        } else {
-            item {
-                Text(
-                    text = "Touche un événement pour le modifier.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
 
-        for (event in sorted) {
-            item {
-                val next = Stats.nextOccurrence(event, today)
-                val days = if (next == null) null else ChronoUnit.DAYS.between(today, next)
-                val isDue = days != null && days <= event.reminderDays.toLong()
-                val selected = isEditing && editingId == event.id
-
-                Column {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { startEditing(event) }
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = event.title,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.SemiBold,
-                                color = when {
-                                    selected -> MaterialTheme.colorScheme.primary
-                                    isDue -> MaterialTheme.colorScheme.error
-                                    else -> MaterialTheme.colorScheme.onSurface
-                                }
-                            )
-                            Text(
-                                text = if (selected) {
-                                    "en cours de modification"
-                                } else {
-                                    buildEventSubtitle(event, next, days)
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (selected) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                }
-                            )
-                            val amount = event.amountMillimes
-                            if (amount != null) {
+            for (occurrence in occurrences) {
+                item {
+                    val date = occurrence.first
+                    val event = occurrence.second
+                    Column {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { startEditing(event) }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            ColorDot(eventKindColorHex(event.kind))
+                            Spacer(Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Montant prévu : " + Money.display(amount),
-                                    style = MaterialTheme.typography.bodySmall
+                                    text = event.title,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.SemiBold
                                 )
-                            }
-                            if (event.notes.isNotEmpty()) {
                                 Text(
-                                    text = event.notes,
+                                    text = date.format(dayFormatter) + " · " + event.kind.label +
+                                        if (event.recurrence == Recurrence.AUCUNE) {
+                                            ""
+                                        } else {
+                                            " · " + event.recurrence.label
+                                        },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                        }
-                        IconButton(onClick = { viewModel.markEventDone(event) }) {
-                            Icon(Icons.Filled.Check, contentDescription = "Marquer comme fait")
-                        }
-                        IconButton(
-                            onClick = {
-                                if (selected) resetForm()
-                                viewModel.deleteEvent(event.id)
+                            val amount = event.amountMillimes
+                            if (amount != null) {
+                                Text(
+                                    text = Money.display(amount),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
                             }
-                        ) {
-                            Icon(Icons.Filled.Delete, contentDescription = "Supprimer")
                         }
+                        HorizontalDivider()
                     }
-                    HorizontalDivider()
+                }
+            }
+        } else {
+            if (sorted.isEmpty()) {
+                item {
+                    SectionCard(title = "Aucun événement") {
+                        Text(
+                            "Ajoute un anniversaire, une maintenance d'équipement ou " +
+                                "une date de renouvellement : l'application te préviendra " +
+                                "avant l'échéance."
+                        )
+                    }
+                }
+            } else {
+                item {
+                    Text(
+                        text = "Touche un événement pour le modifier.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            for (event in sorted) {
+                item {
+                    val next = Stats.nextOccurrence(event, today)
+                    val days = if (next == null) null else ChronoUnit.DAYS.between(today, next)
+                    val isDue = days != null && days <= event.reminderDays.toLong()
+                    val selected = isEditing && editingId == event.id
+
+                    Column {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { startEditing(event) }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            ColorDot(eventKindColorHex(event.kind))
+                            Spacer(Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = event.title,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = when {
+                                        selected -> MaterialTheme.colorScheme.primary
+                                        isDue -> MaterialTheme.colorScheme.error
+                                        else -> MaterialTheme.colorScheme.onSurface
+                                    }
+                                )
+                                Text(
+                                    text = if (selected) {
+                                        "en cours de modification"
+                                    } else {
+                                        buildEventSubtitle(event, next, days)
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (selected) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+                                )
+                                val amount = event.amountMillimes
+                                if (amount != null) {
+                                    Text(
+                                        text = "Montant prévu : " + Money.display(amount),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                                if (event.notes.isNotEmpty()) {
+                                    Text(
+                                        text = event.notes,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            IconButton(onClick = { viewModel.markEventDone(event) }) {
+                                Icon(Icons.Filled.Check, contentDescription = "Marquer comme fait")
+                            }
+                            IconButton(
+                                onClick = {
+                                    if (selected) resetForm()
+                                    viewModel.deleteEvent(event.id)
+                                }
+                            ) {
+                                Icon(Icons.Filled.Delete, contentDescription = "Supprimer")
+                            }
+                        }
+                        HorizontalDivider()
+                    }
                 }
             }
         }
 
         item { Spacer(Modifier.height(24.dp)) }
     }
+}
+
+/** « jeudi 12 septembre 2026 » */
+fun longDayLabel(date: LocalDate): String {
+    val dayNames = listOf(
+        "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"
+    )
+    val monthNames = listOf(
+        "janvier", "février", "mars", "avril", "mai", "juin",
+        "juillet", "août", "septembre", "octobre", "novembre", "décembre"
+    )
+    val dayName = dayNames[date.dayOfWeek.value - 1]
+    return dayName.replaceFirstChar { it.uppercase() } + " " + date.dayOfMonth +
+        " " + monthNames[date.monthValue - 1] + " " + date.year
 }
 
 private fun buildEventSubtitle(event: EventItem, next: LocalDate?, days: Long?): String {
