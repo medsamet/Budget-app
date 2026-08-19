@@ -57,6 +57,7 @@ vente | Vente | #8A6552
 2026-08-25 | Abonnement téléphone | LICENCE | MENSUELLE | 3 | 35.000 | |
 2026-09-05 | Entretien chaudière | MAINTENANCE | ANNUELLE | 30 | 180.000 | contrat annuel obligatoire |
 2026-09-12 | Anniversaire Lina | ANNIVERSAIRE | ANNUELLE | 14 | 120.000 | prévoir le gâteau |
+2026-09-20 | Nettoyage climatiseur | MAINTENANCE | BIMESTRIELLE | 5 | 60.000 | filtres à rincer |
 2026-09-30 | Révision voiture | MAINTENANCE | ANNUELLE | 21 | 350.000 | garage du centre | 2025-09-28
 2026-10-15 | Renouvellement antivirus | LICENCE | ANNUELLE | 30 | 95.000 | |
 2026-11-03 | Assurance habitation | ASSURANCE | ANNUELLE | 30 | 480.000 | | 2025-11-03

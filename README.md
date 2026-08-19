@@ -11,8 +11,10 @@ Toutes les données restent sur le téléphone : aucun compte, aucun serveur, au
 - **Historique** — navigation mois par mois, total du mois, détail de chaque dépense.
 - **Statistiques** — d'où vient l'argent (par source) et où il part (par catégorie), consommation du budget, évolution des deux flux sur 6 mois.
 - **Prévisions** — projection du **solde net** sur 6 mois : revenus attendus moins dépenses estimées, à partir des moyennes des 3 derniers mois complets et des échéances datées de l'agenda.
-- **Agenda et rappels** — anniversaires, maintenances d'équipement, renouvellements de licence : date, récurrence, délai de rappel, montant prévu. Un événement se modifie d'une pression. Une vérification quotidienne notifie les échéances qui entrent dans leur fenêtre de rappel.
+- **Agenda et rappels** — anniversaires, maintenances d'équipement, renouvellements de licence : date, récurrence (jusqu'à *tous les 2 mois*), délai de rappel, montant prévu. Un événement se modifie d'une pression. Une vérification quotidienne notifie les échéances qui entrent dans leur fenêtre de rappel.
+- **Vue calendrier** — l'agenda bascule entre une liste triée par échéance et une grille mensuelle : les occurrences récurrentes y apparaissent en pastilles colorées par type, et toucher un jour filtre la liste sur ce jour.
 - **Export / import texte** — sauvegarde intégrale dans un fichier texte lisible, modifiable à la main et réimportable sans perte.
+- **À propos** — version installée, auteur, contact et licence, en bas de l'onglet *Données*.
 
 ## Récupérer l'APK depuis un téléphone
 
@@ -89,7 +91,7 @@ C'est la pierre angulaire du projet : la sauvegarde, la migration d'un télépho
 | `date` | oui | Date de la première occurrence |
 | `titre` | oui | Libellé |
 | `type` | non | `ANNIVERSAIRE`, `MAINTENANCE`, `LICENCE`, `ASSURANCE`, `AUTRE` |
-| `recurrence` | non | `AUCUNE`, `MENSUELLE`, `TRIMESTRIELLE`, `SEMESTRIELLE`, `ANNUELLE` |
+| `recurrence` | non | `AUCUNE`, `MENSUELLE`, `BIMESTRIELLE` (tous les 2 mois), `TRIMESTRIELLE`, `SEMESTRIELLE`, `ANNUELLE` |
 | `rappel_jours` | non | Nombre de jours d'avance pour la notification (7 par défaut) |
 | `montant` | non | Renseigné, l'événement entre dans les prévisions |
 | `notes` | non | Texte libre |
@@ -124,6 +126,7 @@ vente | Vente | #8A6552
 [EVENEMENTS]
 # date | titre | type | recurrence | rappel_jours | montant | notes | derniere_occurrence
 2026-09-12 | Anniversaire Lina | ANNIVERSAIRE | ANNUELLE | 14 | 120.000 | prévoir le gâteau |
+2026-09-20 | Nettoyage climatiseur | MAINTENANCE | BIMESTRIELLE | 5 | 60.000 | filtres à rincer |
 2026-11-03 | Assurance habitation | ASSURANCE | ANNUELLE | 30 | 480.000 | | 2025-11-03
 ```
 
@@ -151,6 +154,7 @@ app/src/main/java/com/medsamet/budgetapp/
 ├── data/            persistance SQLite écrite à la main
 ├── notif/           rappels quotidiens (WorkManager) et notifications
 └── ui/              écrans Jetpack Compose
+                     dont EventCalendar.kt, la grille mensuelle de l'agenda
 ```
 
 Choix techniques notables :
@@ -160,10 +164,11 @@ Choix techniques notables :
 - **Aucun sélecteur de date graphique** : saisie au clavier avec raccourcis « Aujourd'hui » / « Hier », plus rapide et sans API expérimentale.
 - **Logique métier isolée d'Android** : `domain/` est couvert par des tests unitaires JVM exécutés à chaque compilation.
 - **Champs invisibles préservés à la modification** : les notes d'une dépense et la dernière occurrence traitée d'un événement survivent à une modification, même quand le formulaire ne les montre pas.
+- **Version affichée lue sur le paquet installé** : l'écran *À propos* interroge le `PackageManager` plutôt qu'une constante recopiée, donc elle ne peut pas diverger du build.
 
 ## Tests
 
-Les tests unitaires couvrent le cœur sensible du projet : arithmétique en millimes, aller-retour export/import, échappement des séparateurs, tolérance aux lignes fautives, relecture des fichiers au format v1, calcul des récurrences (y compris l'absence de dérive en fin de mois), solde mensuel et prévisions nettes.
+Les tests unitaires couvrent le cœur sensible du projet : arithmétique en millimes, aller-retour export/import, échappement des séparateurs, tolérance aux lignes fautives, relecture des fichiers au format v1, calcul des récurrences (y compris l'absence de dérive en fin de mois), regroupement des occurrences par jour pour le calendrier, solde mensuel et prévisions nettes.
 
 ```
 gradle testDebugUnitTest
