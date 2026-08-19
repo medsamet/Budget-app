@@ -112,6 +112,96 @@ class StatsTest {
         assertEquals(LocalDate.of(2026, 8, 25), due[0].second)
     }
 
+    @Test
+    fun bimonthlyEventStepsByTwoMonths() {
+        val event = EventItem(
+            date = LocalDate.of(2026, 1, 5),
+            title = "Facture eau",
+            recurrence = Recurrence.BIMESTRIELLE
+        )
+        assertEquals(
+            listOf(
+                LocalDate.of(2026, 1, 5),
+                LocalDate.of(2026, 3, 5),
+                LocalDate.of(2026, 5, 5),
+                LocalDate.of(2026, 7, 5)
+            ),
+            Stats.occurrencesBetween(event, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 8, 31))
+        )
+        assertEquals(
+            LocalDate.of(2026, 3, 5),
+            Stats.nextOccurrence(event, LocalDate.of(2026, 2, 1))
+        )
+    }
+
+    @Test
+    fun bimonthlyDoesNotDriftAtMonthEnds() {
+        val event = EventItem(
+            date = LocalDate.of(2025, 12, 31),
+            title = "Relève compteur",
+            recurrence = Recurrence.BIMESTRIELLE
+        )
+        assertEquals(
+            listOf(
+                LocalDate.of(2025, 12, 31),
+                LocalDate.of(2026, 2, 28),
+                LocalDate.of(2026, 4, 30),
+                LocalDate.of(2026, 6, 30)
+            ),
+            Stats.occurrencesBetween(event, LocalDate.of(2025, 12, 1), LocalDate.of(2026, 7, 1))
+        )
+    }
+
+    // ------------------------------------------------------------ calendrier
+
+    @Test
+    fun groupsOccurrencesByDayIncludingSeveralOnTheSameDate() {
+        val anniversaire = EventItem(
+            date = LocalDate.of(2026, 9, 12),
+            title = "Anniversaire",
+            recurrence = Recurrence.ANNUELLE
+        )
+        val abonnement = EventItem(
+            date = LocalDate.of(2026, 9, 12),
+            title = "Abonnement",
+            recurrence = Recurrence.MENSUELLE
+        )
+        val byDay = Stats.eventsByDay(
+            listOf(anniversaire, abonnement),
+            LocalDate.of(2026, 9, 1),
+            LocalDate.of(2026, 9, 30)
+        )
+        assertEquals(1, byDay.size)
+        assertEquals(2, byDay[LocalDate.of(2026, 9, 12)]?.size)
+    }
+
+    @Test
+    fun aMonthlyEventAppearsOnceInEachMonthOfTheRange() {
+        val event = EventItem(
+            date = LocalDate.of(2026, 3, 10),
+            title = "Abonnement",
+            recurrence = Recurrence.MENSUELLE
+        )
+        val byDay = Stats.eventsByDay(
+            listOf(event),
+            LocalDate.of(2026, 9, 1),
+            LocalDate.of(2026, 9, 30)
+        )
+        assertEquals(1, byDay.size)
+        assertEquals(listOf(LocalDate.of(2026, 9, 10)), byDay.keys.toList())
+    }
+
+    @Test
+    fun anEmptyMonthGroupsToNothing() {
+        val event = EventItem(date = LocalDate.of(2026, 5, 4), title = "Contrôle technique")
+        val byDay = Stats.eventsByDay(
+            listOf(event),
+            LocalDate.of(2026, 9, 1),
+            LocalDate.of(2026, 9, 30)
+        )
+        assertTrue(byDay.isEmpty())
+    }
+
     // -------------------------------------------------------------- totaux
 
     @Test

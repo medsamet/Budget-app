@@ -1,5 +1,6 @@
 package com.medsamet.budgetapp.ui
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -37,6 +38,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.pm.PackageInfoCompat
 import com.medsamet.budgetapp.domain.Category
 import com.medsamet.budgetapp.domain.IncomeSource
 import com.medsamet.budgetapp.domain.Money
@@ -256,6 +258,8 @@ fun DataScreen(viewModel: BudgetViewModel) {
 
         item { SourceManager(viewModel) }
 
+        item { AboutSection(viewModel) }
+
         item { Spacer(Modifier.height(24.dp)) }
     }
 }
@@ -404,6 +408,64 @@ private fun SourceManager(viewModel: BudgetViewModel) {
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Ajouter")
+        }
+    }
+}
+
+@Composable
+private fun AboutSection(viewModel: BudgetViewModel) {
+    val context = LocalContext.current
+
+    // La version est lue sur le paquet installe plutot que recopiee dans le
+    // code : impossible qu'elle derive de celle declaree dans build.gradle.kts.
+    val versionLabel = remember {
+        try {
+            val info = context.packageManager.getPackageInfo(context.packageName, 0)
+            val name = info.versionName ?: "?"
+            val code = PackageInfoCompat.getLongVersionCode(info)
+            "$name (build $code)"
+        } catch (_: Exception) {
+            "inconnue"
+        }
+    }
+
+    SectionCard(title = "À propos") {
+        LabeledRow("Application", "Budget")
+        LabeledRow("Version", versionLabel)
+        LabeledRow("Auteur", "Mohamed Samet")
+        LabeledRow("Contact", "sametmohamed1987@gmail.com")
+        LabeledRow("Licence", "MIT")
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "Copyright © 2026 medsamet. Logiciel libre distribué sous licence MIT : " +
+                "usage, modification et redistribution autorisés, sans aucune garantie.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "Code source : github.com/medsamet/budget-app",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(12.dp))
+        OutlinedButton(
+            onClick = {
+                val intent = Intent(
+                    Intent.ACTION_SENDTO,
+                    Uri.parse("mailto:sametmohamed1987@gmail.com")
+                )
+                intent.putExtra(Intent.EXTRA_SUBJECT, "Budget — retour")
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                try {
+                    context.startActivity(intent)
+                } catch (_: Exception) {
+                    viewModel.message = "Aucune application de messagerie trouvée"
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Écrire à l'auteur")
         }
     }
 }
