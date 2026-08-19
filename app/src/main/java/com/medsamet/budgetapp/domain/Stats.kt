@@ -17,6 +17,7 @@ object Stats {
     fun stepMonths(recurrence: Recurrence): Int = when (recurrence) {
         Recurrence.AUCUNE -> 0
         Recurrence.MENSUELLE -> 1
+        Recurrence.BIMESTRIELLE -> 2
         Recurrence.TRIMESTRIELLE -> 3
         Recurrence.SEMESTRIELLE -> 6
         Recurrence.ANNUELLE -> 12
@@ -70,6 +71,26 @@ object Stats {
         }
         due.sortBy { it.second }
         return due
+    }
+
+    /**
+     * Occurrences de tous les événements, regroupées par jour, sur l'intervalle
+     * [from]..[to]. Alimente la vue calendrier : un même jour peut porter
+     * plusieurs événements, et un même événement apparaître plusieurs fois
+     * dans l'intervalle s'il est récurrent.
+     */
+    fun eventsByDay(
+        events: List<EventItem>,
+        from: LocalDate,
+        to: LocalDate
+    ): Map<LocalDate, List<EventItem>> {
+        val byDay = LinkedHashMap<LocalDate, MutableList<EventItem>>()
+        for (event in events) {
+            for (date in occurrencesBetween(event, from, to)) {
+                byDay.getOrPut(date) { ArrayList() }.add(event)
+            }
+        }
+        return byDay
     }
 
     // ------------------------------------------------------- dépenses et revenus

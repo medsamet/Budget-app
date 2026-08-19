@@ -67,6 +67,7 @@ enum class EventKind(val code: String, val label: String) {
 enum class Recurrence(val code: String, val label: String) {
     AUCUNE("AUCUNE", "Aucune"),
     MENSUELLE("MENSUELLE", "Mensuelle"),
+    BIMESTRIELLE("BIMESTRIELLE", "Tous les 2 mois"),
     TRIMESTRIELLE("TRIMESTRIELLE", "Trimestrielle"),
     SEMESTRIELLE("SEMESTRIELLE", "Semestrielle"),
     ANNUELLE("ANNUELLE", "Annuelle");
